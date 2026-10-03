@@ -22,7 +22,7 @@ Read this file first when implementing features. Nexity is a **native iOS + Andr
 | [architecture/PUSH_NOTIFICATIONS.md](architecture/PUSH_NOTIFICATIONS.md) | FCM / APNs push |
 | [architecture/CLOUDINARY.md](architecture/CLOUDINARY.md) | Image/video uploads from the device and delivery |
 | [architecture/INSTAGRAM_CONTENT_UX.md](architecture/INSTAGRAM_CONTENT_UX.md) | Posts, Reels, Stories UX (match Instagram app) |
-| [architecture/THEMING.md](architecture/THEMING.md) | Mood palette for the light appearance, plus dark & light |
+| [architecture/THEMING.md](architecture/THEMING.md) | Mood themes (each replaces Light / Dark / System for the whole app), plus dark & light |
 | [API_QUICK_REFERENCE.md](API_QUICK_REFERENCE.md) | All endpoints |
 
 ## How to implement a feature
@@ -35,7 +35,7 @@ Read this file first when implementing features. Nexity is a **native iOS + Andr
 6. Verify on **both an Android device/emulator and an iOS simulator** (or note that iOS was not tested if no Mac is available).
 7. **Media**: never send post/reel/story binaries through the API; upload from the device to **Cloudinary** per CLOUDINARY.md.
 8. **Posts / Reels / Stories**: create, view, and edit flows must follow **INSTAGRAM_CONTENT_UX.md**.
-9. **Theme**: every screen must work in dark and light appearance using semantic color tokens per **THEMING.md**. The light appearance uses the selected mood palette in that document.
+9. **Theme**: every screen must work in Light, Dark and every mood theme using semantic color tokens per **THEMING.md**. A selected mood replaces Light / Dark / System and re-themes the whole app like Dark mode (no white surfaces), so no element may hard-code a color. Buttons keep their design.
 10. If the implementation diverges, update the module doc in the same change (docs are the source of truth).
 
 ## Conventions
@@ -46,7 +46,7 @@ Read this file first when implementing features. Nexity is a **native iOS + Andr
 - **Pagination**: cursor-based `?cursor=&limit=` default `limit=20`, max `50`.
 - **Errors**: `{ "error": { "code": "SNAKE_CASE", "message": "Human readable" } }`.
 - **Navigation params**: ids only, never full objects.
-- **Theme**: appearance preference `light` | `dark` | `system` (default `system`). Light colors come from the selected mood (initial `calm`) in **THEMING.md**. No hard-coded mood colors in components.
+- **Theme**: one exclusive choice: `theme` `light` | `dark` | `system` (default `system`) or a `mood` (default `null`). A mood replaces the theme for the whole app; picking a theme removes the mood; tapping the selected mood again removes it. See **THEMING.md**. No hard-coded colors in components.
 - **Platform code**: shared by default; use `Platform.select` / `.ios.tsx` / `.android.tsx` only for differences listed in MOBILE_APP.md.
 
 ## Source document

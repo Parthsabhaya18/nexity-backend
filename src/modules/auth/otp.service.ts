@@ -4,6 +4,7 @@ import type { Types } from 'mongoose';
 
 import { jwtAccessSecret } from '../../config/env';
 import { ApiError } from '../../utils/ApiError';
+import { renderCodeEmail } from '../../utils/emailLayout';
 import { sendMail } from '../../utils/mailer';
 import { OtpCode, type OtpPurpose } from './otpCode.model';
 
@@ -128,20 +129,18 @@ function buildEmail(
   const intro = isReset
     ? 'Use this code to reset your Nexity password.'
     : 'Use this code to verify your email and finish creating your Nexity account.';
-  const text = `Hi ${firstName},\n\n${intro}\n\n${code}\n\nThe code expires in ${OTP_TTL_MINUTES} minutes. If you didn’t ask for it, you can ignore this email.\n\n— Nexity`;
-  const html = `<!doctype html><html><body style="margin:0;background:#EFF8FF;font-family:Arial,Helvetica,sans-serif;color:#0F2747">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:32px 16px">
-<table role="presentation" width="100%" style="max-width:480px;background:#FFFFFF;border:1px solid #CFE5FA;border-radius:16px" cellpadding="0" cellspacing="0"><tr><td style="padding:32px">
-<p style="margin:0 0 8px;font-size:20px;font-weight:bold">Hi ${escapeHtml(firstName)},</p>
-<p style="margin:0 0 24px;color:#58708C;font-size:15px">${intro}</p>
-<p style="margin:0 0 24px;font-size:34px;letter-spacing:10px;font-weight:bold;color:#1D4ED8">${code}</p>
-<p style="margin:0;color:#58708C;font-size:13px">The code expires in ${OTP_TTL_MINUTES} minutes. If you didn’t ask for it, you can ignore this email.</p>
-</td></tr></table></td></tr></table></body></html>`;
-  return { to: user.email, subject, text, html };
+  const footnote = isReset
+    ? 'If you didn’t ask to reset your password, you can ignore this email. Your password stays the same.'
+    : 'If you didn’t try to create a Nexity account, you can ignore this email.';
+  const text = `Hi ${firstName},\n\n${intro}\n\n${code}\n\nThe code expires in ${OTP_TTL_MINUTES} minutes. ${footnote}\n\nNexity will never ask you for this code.\n\n— Nexity`;
+  const { html, attachments } = renderCodeEmail({
+    preheader: `Your code is ${code}. It expires in ${OTP_TTL_MINUTES} minutes.`,
+    title: isReset ? 'Reset your password' : 'Verify your email',
+    greetingName: firstName,
+    intro,
+    code,
+    expiresInMinutes: OTP_TTL_MINUTES,
+    footnote,
+  });
+  return { to: user.email, subject, text, html, attachments };
 }
-
-const escapeHtml = (s: string) =>
-  s.replace(
-    /[&<>"']/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
-  );

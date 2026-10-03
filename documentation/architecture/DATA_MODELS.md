@@ -17,6 +17,7 @@ Physical schema may differ; fields and relationships must remain equivalent.
 | is_verified | boolean | email verified |
 | role | enum | `user`, `moderator`, `admin` |
 | theme_preference | enum | `system` (default), `light`, `dark` — see [THEMING.md](THEMING.md) |
+| mood | enum | nullable, default `null`: `happy`, `calm`, `romantic`, `sad`, `angry`, `cool`, `relaxed`, `excited`, `tired`, `motivated`. When set, it replaces `theme_preference` for the whole app — see [THEMING.md](THEMING.md) |
 | created_at | datetime | |
 
 ## Follow

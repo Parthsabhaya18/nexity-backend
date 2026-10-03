@@ -246,7 +246,7 @@ Store requirements to plan for:
 - [ ] Respects safe areas (notch, Dynamic Island, cutout, home indicator, nav bar).
 - [ ] Android back button behaves correctly (closes sheet → pops screen → exits app from tab root).
 - [ ] Keyboard never covers the focused input or the primary button.
-- [ ] Dark appearance and the selected mood palette for light appearance, per [THEMING.md](THEMING.md).
+- [ ] Light / Dark / System and the ten mood themes (a mood replaces Light / Dark / System and re-themes the whole app like Dark mode does, no white surfaces), per [THEMING.md](THEMING.md).
 - [ ] Offline state is handled (banner, no crash, retry).
 - [ ] Permissions are requested only when needed and denial is handled.
 - [ ] VoiceOver / TalkBack can reach every action.

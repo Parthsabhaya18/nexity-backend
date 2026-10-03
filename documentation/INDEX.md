@@ -17,7 +17,7 @@ Every screen's deep link works as `nexity://<path>` and `https://nexity.com/<pat
 | [architecture/PUSH_NOTIFICATIONS.md](architecture/PUSH_NOTIFICATIONS.md) | FCM / APNs, device registration, channels, tap routing |
 | [architecture/CLOUDINARY.md](architecture/CLOUDINARY.md) | All image/video storage & uploads from the device |
 | [architecture/INSTAGRAM_CONTENT_UX.md](architecture/INSTAGRAM_CONTENT_UX.md) | Posts, Reels, Stories — IG parity, tabs, gestures |
-| [architecture/THEMING.md](architecture/THEMING.md) | Mood-based dynamic theme palette, plus dark & light appearance |
+| [architecture/THEMING.md](architecture/THEMING.md) | Mood themes (replace Light / Dark / System for the whole app), plus dark & light appearance |
 
 ## Authentication & account
 
@@ -103,7 +103,7 @@ Every screen's deep link works as `nexity://<path>` and `https://nexity.com/<pat
 | Privacy | `PrivacySettings` | `settings/privacy` | [modules/settings/privacy.md](modules/settings/privacy.md) |
 | Account (incl. delete account) | `AccountSettings` | `settings/account` | [modules/settings/account.md](modules/settings/account.md) |
 | Notifications (push preferences) | `NotificationSettings` | `settings/notifications` | [modules/settings/notification-settings.md](modules/settings/notification-settings.md) |
-| Appearance (mood palette, dark / light) | `AppearanceSettings` | `settings/appearance` | [modules/settings/appearance.md](modules/settings/appearance.md) |
+| Theme (Light / Dark / System or a mood) | `AppearanceSettings` | `settings/appearance` | [modules/settings/appearance.md](modules/settings/appearance.md) |
 | Report content | Report bottom sheet | — | [modules/settings/report.md](modules/settings/report.md) |
 
 ## Admin (moderators)

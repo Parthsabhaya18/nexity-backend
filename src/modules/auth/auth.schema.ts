@@ -2,8 +2,6 @@ import { z } from 'zod';
 
 import { GENDERS } from '../users/user.model';
 
-const MIN_AGE = 18;
-
 export const emailSchema = z
   .string({ error: 'Enter your email address.' })
   .trim()
@@ -28,13 +26,6 @@ const codeSchema = z
   .trim()
   .regex(/^\d{6}$/, 'Enter all 6 digits.');
 
-function ageOn(dob: Date, today = new Date()) {
-  let age = today.getUTCFullYear() - dob.getUTCFullYear();
-  const m = today.getUTCMonth() - dob.getUTCMonth();
-  if (m < 0 || (m === 0 && today.getUTCDate() < dob.getUTCDate())) age--;
-  return age;
-}
-
 export const registerSchema = z.object({
   display_name: z
     .string({ error: 'Please enter your name.' })
@@ -49,8 +40,10 @@ export const registerSchema = z.object({
     .string({ error: 'Please enter your date of birth.' })
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Please enter your date of birth.')
     .transform((v) => new Date(`${v}T00:00:00.000Z`))
-    .refine((d) => !Number.isNaN(d.getTime()) && d.getUTCFullYear() >= 1900, 'Enter a valid date.')
-    .refine((d) => ageOn(d) >= MIN_AGE, `You must be ${MIN_AGE} or older to use Nexity.`),
+    .refine(
+      (d) => !Number.isNaN(d.getTime()) && d.getUTCFullYear() >= 1900 && d.getTime() <= Date.now(),
+      'Enter a valid date.',
+    ),
   accept_terms: z.literal(true, { error: 'Please accept the Terms and Privacy Policy.' }),
 });
 

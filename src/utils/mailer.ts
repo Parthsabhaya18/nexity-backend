@@ -1,4 +1,4 @@
-import nodemailer, { type Transporter } from 'nodemailer';
+import nodemailer, { type SendMailOptions, type Transporter } from 'nodemailer';
 
 import { env, isMailConfigured } from '../config/env';
 import { ApiError } from './ApiError';
@@ -21,6 +21,7 @@ export interface MailMessage {
   subject: string;
   text: string;
   html: string;
+  attachments?: SendMailOptions['attachments'];
 }
 
 export async function sendMail(message: MailMessage) {

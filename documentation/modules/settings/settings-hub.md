@@ -15,7 +15,7 @@ Grouped native-style list (iOS inset grouped look; Android full-width rows with 
 | Account | `AccountSettings` |
 | Privacy | `PrivacySettings` |
 | Notifications | `NotificationSettings` — see [notification-settings.md](notification-settings.md) |
-| Appearance (mood palette, plus Light / Dark / System default) | `AppearanceSettings` — see [appearance.md](appearance.md) |
+| Theme (Light / Dark / System default, or a mood — one choice for the whole app) | `AppearanceSettings` — see [appearance.md](appearance.md) |
 | Blocked accounts | `BlockedAccounts` |
 | Help & support | In-app browser (help center) |
 | Privacy Policy, Terms of Use | In-app browser |
@@ -26,6 +26,6 @@ Grouped native-style list (iOS inset grouped look; Android full-width rows with 
 ## Acceptance criteria
 
 - [ ] Grouped list layout looks native on iOS and Android.
-- [ ] Appearance row shows the current appearance (Light / Dark / System default) and the selected mood name.
+- [ ] Theme row shows the active choice: the mood name with emoji when a mood is on, otherwise Light / Dark / System default.
 - [ ] Notifications row shows "Off" when OS notification permission is denied.
 - [ ] About shows the real app version and build number.

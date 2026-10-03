@@ -2,7 +2,7 @@
 
 **Screen:** `Login` (AuthStack)  
 **Deep link:** `nexity://login`  
-**Theme:** Dark & light from device setting (logged out); apply `user.preferences.theme` after success — [THEMING.md](../../architecture/THEMING.md)  
+**Theme:** Dark & light from device setting (logged out); apply `user.preferences.theme` and `user.preferences.mood` (a mood replaces the theme for the whole app) after success — [THEMING.md](../../architecture/THEMING.md)  
 **Auth required:** No  
 **Status:** Implemented (backend + mobile). `Login` is the **initial route** for logged-out users — there is no Welcome screen ([welcome.md](welcome.md)).  
 **Related:** [register.md](register.md), [forgot-password.md](forgot-password.md), [email-verification.md](email-verification.md)

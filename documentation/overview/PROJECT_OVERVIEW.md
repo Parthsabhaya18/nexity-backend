@@ -11,14 +11,20 @@ Baseline name: **Secret_Social_App_Project_Overview_v3.docx**.
 - Fast, familiar social UX (feed, reels, stories, DMs) with clearer privacy defaults than legacy networks.
 - Pseudonymous-friendly profiles where allowed by policy (username + avatar, minimal PII on public surfaces).
 - Safe sharing: reporting, blocks, rate limits, and moderation queue for staff.
-- Comfortable in any lighting: full **dark and light appearance** on every screen, chosen in Settings → Appearance (Light / Dark / System default).
-- A **mood-based dynamic theme**: when the user selects a mood, the light appearance switches to that mood’s complete color palette (see below and [THEMING.md](../architecture/THEMING.md)).
+- Comfortable in any lighting: full **dark and light appearance** on every screen, chosen in Settings → Theme (Light / Dark / System default).
+- A **mood-based dynamic theme**: when the user selects a mood, it replaces Light / Dark / System and the whole application switches to that mood's colors, the same way Dark mode recolors everything (see below and [THEMING.md](../architecture/THEMING.md)).
 
 ## Mood-Based Dynamic Theme System
 
 ### Purpose
 
-The light appearance of the app follows the mood the user selects. The palette keeps a clear hierarchy so the interface stays readable, accessible, and consistent: a light page, white surfaces, a mood accent, a darker action color, and dark text. The application does not paint every element in the mood color.
+A mood is a full theme, like Light or Dark. Theme and mood are **one exclusive choice**:
+
+- Selecting a mood deselects Light / Dark / System and applies the mood to the **whole application** (every screen, post, card, sheet, menu, tab bar, input, story ring, the Secret world and the Premium card).
+- Selecting Light / Dark / System removes the mood.
+- Tapping the selected mood again removes it, and the previous Light / Dark / System comes back.
+
+It works like Dark mode: no surface stays white. The palette keeps a clear hierarchy: a slightly deeper mood page, mood-tinted cards and sheets on top, a mood accent, a darker mood action color, and dark mood text. Buttons keep their normal design; only their colors come from the theme.
 
 This section and [THEMING.md](../architecture/THEMING.md) are the same palette. If another document disagrees, this palette wins.
 
@@ -37,27 +43,29 @@ Use these names exactly. Use the emoji when a screen shows the mood visually.
 - 😴 Tired
 - 🤩 Motivated
 
-No other moods are part of this system. The initial mood, before the user changes it, is **Calm**.
+No other moods are part of this system. No mood is selected by default.
 
 ### Complete color palette
 
-| Mood         | Background | Surface/Card | Primary   | Button    | Text      | Secondary Text | Border    |
-| ------------ | ---------- | ------------ | --------- | --------- | --------- | -------------- | --------- |
-| 😊 Happy     | `#FFFBEA`  | `#FFFFFF`    | `#F5B800` | `#D99500` | `#2B2200` | `#756A3A`      | `#F5E7A8` |
-| 😌 Calm      | `#EFF8FF`  | `#FFFFFF`    | `#3B82F6` | `#1D4ED8` | `#0F2747` | `#58708C`      | `#CFE5FA` |
-| ❤️ Romantic  | `#FFF1F5`  | `#FFFFFF`    | `#EC4899` | `#BE185D` | `#3B0A1E` | `#87506A`      | `#F7C6D8` |
-| 😢 Sad       | `#EEF2FF`  | `#FFFFFF`    | `#6366F1` | `#4338CA` | `#171B3A` | `#626A91`      | `#D5D9F5` |
-| 😡 Angry     | `#FFF1F1`  | `#FFFFFF`    | `#EF4444` | `#B91C1C` | `#350909` | `#824343`      | `#F6CACA` |
-| 😎 Cool      | `#F5F3FF`  | `#FFFFFF`    | `#8B5CF6` | `#6D28D9` | `#21133D` | `#6B5A82`      | `#DDD4FE` |
-| 🌿 Relaxed   | `#F1FAF4`  | `#FFFFFF`    | `#22C55E` | `#15803D` | `#0B2B18` | `#557562`      | `#CBEBD5` |
-| 🔥 Excited   | `#FFF5ED`  | `#FFFFFF`    | `#F97316` | `#C2410C` | `#351306` | `#875D45`      | `#F6D0BA` |
-| 😴 Tired     | `#F5F3F7`  | `#FFFFFF`    | `#8B7FA8` | `#625477` | `#292432` | `#756D7D`      | `#DDD8E5` |
-| 🤩 Motivated | `#EEFDFD`  | `#FFFFFF`    | `#06B6D4` | `#0E7490` | `#062B32` | `#4C7278`      | `#BFE8EE` |
+| Mood         | Base      | Page & Sheet | Surface/Card | Primary   | Button    | Text      | Secondary Text | Border    |
+| ------------ | --------- | ------------ | ------------ | --------- | --------- | --------- | -------------- | --------- |
+| 😊 Happy     | `#FFFBEA` | `#FEF4D3`    | `#FEF6DA`    | `#F5B800` | `#D99500` | `#2B2200` | `#756A3A`      | `#F5E7A8` |
+| 😌 Calm      | `#EFF8FF` | `#DDECFE`    | `#E2F0FE`    | `#3B82F6` | `#1D4ED8` | `#0F2747` | `#58708C`      | `#CFE5FA` |
+| ❤️ Romantic  | `#FFF1F5` | `#FDE0EC`    | `#FEE5EF`    | `#EC4899` | `#BE185D` | `#3B0A1E` | `#87506A`      | `#F7C6D8` |
+| 😢 Sad       | `#EEF2FF` | `#E0E4FE`    | `#E4E8FE`    | `#6366F1` | `#4338CA` | `#171B3A` | `#626A91`      | `#D5D9F5` |
+| 😡 Angry     | `#FFF1F1` | `#FDE0E0`    | `#FEE5E5`    | `#EF4444` | `#B91C1C` | `#350909` | `#824343`      | `#F6CACA` |
+| 😎 Cool      | `#F5F3FF` | `#EAE4FE`    | `#EEE8FE`    | `#8B5CF6` | `#6D28D9` | `#21133D` | `#6B5A82`      | `#DDD4FE` |
+| 🌿 Relaxed   | `#F1FAF4` | `#DCF5E5`    | `#E3F6EA`    | `#22C55E` | `#15803D` | `#0B2B18` | `#557562`      | `#CBEBD5` |
+| 🔥 Excited   | `#FFF5ED` | `#FEE8D8`    | `#FFECDE`    | `#F97316` | `#C2410C` | `#351306` | `#875D45`      | `#F6D0BA` |
+| 😴 Tired     | `#F5F3F7` | `#EAE7EF`    | `#EEEBF1`    | `#8B7FA8` | `#625477` | `#292432` | `#756D7D`      | `#DDD8E5` |
+| 🤩 Motivated | `#EEFDFD` | `#D7F6F9`    | `#DEF8FA`    | `#06B6D4` | `#0E7490` | `#062B32` | `#4C7278`      | `#BFE8EE` |
+
+Page & Sheet is Primary mixed 10% into Base; Surface/Card is Primary mixed 7% into Base. Both are clearly tinted so nothing reads as white, and cards sit on a slightly deeper page (like Dark mode's card on page). In sheets and menus only the background follows the mood; the action buttons inside keep their normal light colors.
 
 ### Meaning of each color role
 
-1. **Background** — Main screen and page background. It is the lightest mood-specific color.
-2. **Surface/Card** — Cards, containers, sheets, elevated sections, and content surfaces. The finalized value is `#FFFFFF` for every mood.
+1. **Page & Sheet** — Main screen and page background, splash, logged-out screens, and the background of sheets, modals and menus.
+2. **Surface/Card** — Posts (including the post header row), cards, containers, the top bar and the tab bar. Never `#FFFFFF` while a mood is on.
 3. **Primary** — Main mood accent. Use it for active states, selected tabs, important icons, highlights, story rings, and other accent elements.
 4. **Button** — Darker action and call-to-action color. Use it for primary buttons and important interactive actions. Button text is a high-contrast light color (`#FFFFFF`).
 5. **Text** — Main heading and body text. It must stay strong against Background and Surface/Card.
@@ -66,12 +74,12 @@ No other moods are part of this system. The initial mood, before the user change
 
 ### Dynamic theme behavior
 
-When the user selects a mood, the light appearance updates immediately to that mood’s full palette. No restart is required.
+When the user selects a mood, the whole app updates immediately to that mood's full palette. No restart is required.
 
 Happy selected:
 
-- Background → `#FFFBEA`
-- Surface/Card → `#FFFFFF`
+- Page & Sheet → `#FEF4D3`
+- Surface/Card → `#FEF6DA`
 - Primary → `#F5B800`
 - Button → `#D99500`
 - Text → `#2B2200`
@@ -80,8 +88,8 @@ Happy selected:
 
 Calm selected:
 
-- Background → `#EFF8FF`
-- Surface/Card → `#FFFFFF`
+- Page & Sheet → `#DDECFE`
+- Surface/Card → `#E2F0FE`
 - Primary → `#3B82F6`
 - Button → `#1D4ED8`
 - Text → `#0F2747`
@@ -90,14 +98,14 @@ Calm selected:
 
 The same mapping applies to Romantic, Sad, Angry, Cool, Relaxed, Excited, Tired, and Motivated.
 
-Light / Dark / System default still chooses whether the dark appearance or this mood palette is shown. The mood palette does not redefine dark-mode hex values. Success, error, warning, and destructive colors are not mood colors.
+While a mood is on, Light / Dark / System is not applied. The mood palette does not redefine dark-mode hex values. Success, error, warning, and destructive colors are not mood colors.
 
 ### Visual hierarchy
 
 ```
-LIGHT BACKGROUND
+MOOD PAGE
 ↓
-WHITE SURFACE/CARD
+MOOD SURFACE/CARD
 ↓
 LIGHT/MEDIUM MOOD ACCENTS
 ↓
@@ -112,13 +120,14 @@ DARK TEXT
 
 - Screens and components use these semantic roles. They do not hard-code a different mood hex.
 - Primary marks selection and emphasis. Button marks the main action.
-- White surfaces sit on the light background so cards stay distinct.
+- Mood surfaces sit on the slightly deeper mood page so cards stay distinct. No surface is white while a mood is on.
+- Buttons keep their normal design; only their colors come from the theme.
 - Story rings and selected tabs use Primary. Primary button labels use white.
 - Always-dark media screens (reels viewer, story viewer, editors) stay dark. Sheets opened on top of them use the current appearance.
 
 ### Contrast and readability
 
-Text and Secondary Text must remain readable on Background and on Surface/Card. Body text targets WCAG AA (4.5:1). Button text on Button targets the same bar with white. Do not replace Text with Primary, and do not place Primary text on a Primary fill.
+Text and Secondary Text must remain readable on Page and on Surface/Card. Body text targets WCAG AA (4.5:1). Button text on Button targets the same bar with white. Do not replace Text with Primary, and do not place Primary text on a Primary fill.
 
 ### Single source of truth
 

@@ -62,10 +62,10 @@ describe('register + email OTP', () => {
     expect(res.body).not.toHaveProperty('access_token');
   });
 
-  it('rejects under-18 sign-ups and missing terms with field errors', async () => {
+  it('rejects future birth dates and missing terms with field errors', async () => {
     const res = await request(app)
       .post('/api/v1/auth/register')
-      .send({ ...signup, date_of_birth: '2015-01-01', accept_terms: false });
+      .send({ ...signup, date_of_birth: '2999-01-01', accept_terms: false });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION_ERROR');
     const paths = res.body.error.details.map((d: { path: string }) => d.path);
