@@ -7,21 +7,28 @@ Compact index; details live in each module doc. Called by the iOS and Android ap
 | Method | Path | Notes |
 |--------|------|-------|
 | GET | `/health` | Already implemented |
+| GET | `/health/ready` | `503` until MongoDB is connected |
+| POST / GET / DELETE | `/health/db-test` | Dev/test only (`404` in production). Inserts, lists or clears documents in the `health_checks` collection to verify MongoDB writes and reads |
 | GET | `/app/config` | No auth. `{ "ios": { "min_supported_version": "1.0.0", "store_url": "..." }, "android": { ... }, "features": {} }` — force-update check at launch ([MOBILE_APP.md](architecture/MOBILE_APP.md#app-lifecycle)) |
 
 ## Auth
 
-| Method | Path |
-|--------|------|
-| POST | `/auth/register` |
-| POST | `/auth/login` |
-| POST | `/auth/refresh` |
-| POST | `/auth/logout` |
-| POST | `/auth/verify-email` |
-| POST | `/auth/resend-verification` |
-| POST | `/auth/forgot-password` |
-| POST | `/auth/reset-password` |
-| GET | `/auth/username-available` |
+Implemented. Email verification and password reset use 6-digit email codes (OTP). Errors use `{ "error": { "code", "message", "details" } }`.
+
+| Method | Path | Notes |
+|--------|------|-------|
+| POST | `/auth/register` | `201` `{ user, resend_available_in }` — sends a verification code |
+| POST | `/auth/login` | `{ identifier, password }` → session. `403 EMAIL_NOT_VERIFIED` sends a new code |
+| POST | `/auth/refresh` | `{ refresh_token }` → rotated pair |
+| POST | `/auth/logout` | `{ refresh_token }` → `204` |
+| POST | `/auth/verify-email` | `{ email, code }` → session |
+| POST | `/auth/resend-verification` | `{ email }` → `{ resend_available_in }` |
+| POST | `/auth/forgot-password` | `{ email }` → `{ resend_available_in }` (same for unknown emails) |
+| POST | `/auth/verify-reset-code` | `{ email, code }` → `{ reset_token, expires_in }` |
+| POST | `/auth/reset-password` | `{ reset_token, password }` → `204`, logs out all devices |
+| GET | `/auth/username-available` | `?username=` → `{ available, reason? }` |
+
+In development without SMTP, code-sending responses also include `dev_code`.
 
 ## Users & social
 

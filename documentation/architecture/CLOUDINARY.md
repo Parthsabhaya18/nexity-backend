@@ -5,7 +5,7 @@ All **images and videos** for posts, reels, stories, avatars, and message attach
 ## Principles
 
 - **Upload directly from the phone** (iOS/Android app) to the Cloudinary Upload API with **signed parameters** from the backend. Never ship `api_secret` in the app bundle; media bytes never pass through our API servers.
-- **Persist metadata** in PostgreSQL (`public_id`, `resource_type`, `secure_url`, dimensions, duration); Cloudinary is the source of truth for bytes.
+- **Persist metadata** in MongoDB (`public_id`, `resource_type`, `secure_url`, dimensions, duration); Cloudinary is the source of truth for bytes.
 - **Deliver** via `secure_url` and transformation URLs (thumbnails, feed sizes, reel vertical crop).
 
 ## Environment variables

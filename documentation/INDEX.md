@@ -17,18 +17,18 @@ Every screen's deep link works as `nexity://<path>` and `https://nexity.com/<pat
 | [architecture/PUSH_NOTIFICATIONS.md](architecture/PUSH_NOTIFICATIONS.md) | FCM / APNs, device registration, channels, tap routing |
 | [architecture/CLOUDINARY.md](architecture/CLOUDINARY.md) | All image/video storage & uploads from the device |
 | [architecture/INSTAGRAM_CONTENT_UX.md](architecture/INSTAGRAM_CONTENT_UX.md) | Posts, Reels, Stories — IG parity, tabs, gestures |
-| [architecture/THEMING.md](architecture/THEMING.md) | Dark & light theme — tokens, persistence, always-dark screens, iOS/Android specifics |
+| [architecture/THEMING.md](architecture/THEMING.md) | Mood-based dynamic theme palette, plus dark & light appearance |
 
 ## Authentication & account
 
 | Module | Screen | Deep link | Doc |
 |--------|--------|-----------|-----|
-| Welcome | `Welcome` | — | [modules/auth/welcome.md](modules/auth/welcome.md) |
-| Login | `Login` | `login` | [modules/auth/login.md](modules/auth/login.md) |
+| Welcome | not shown (app opens on `Login`) | — | [modules/auth/welcome.md](modules/auth/welcome.md) |
+| Login | `Login` (initial) | `login` | [modules/auth/login.md](modules/auth/login.md) |
 | Register | `Register` | `register` | [modules/auth/register.md](modules/auth/register.md) |
-| Email verification | `VerifyEmail` | `verify-email/:token` | [modules/auth/email-verification.md](modules/auth/email-verification.md) |
-| Forgot password | `ForgotPassword` | — | [modules/auth/forgot-password.md](modules/auth/forgot-password.md) |
-| Reset password | `ResetPassword` | `reset-password/:token` | [modules/auth/reset-password.md](modules/auth/reset-password.md) |
+| Email verification (OTP) | `VerifyEmail` | — | [modules/auth/email-verification.md](modules/auth/email-verification.md) |
+| Forgot password (OTP) | `ForgotPassword` | — | [modules/auth/forgot-password.md](modules/auth/forgot-password.md) |
+| Reset password | `ResetPassword` | — | [modules/auth/reset-password.md](modules/auth/reset-password.md) |
 | Logout | (action in Settings) | — | [modules/auth/logout.md](modules/auth/logout.md) |
 | Onboarding | `OnboardingStack` (4 steps) | — | [modules/auth/onboarding.md](modules/auth/onboarding.md) |
 
@@ -103,7 +103,7 @@ Every screen's deep link works as `nexity://<path>` and `https://nexity.com/<pat
 | Privacy | `PrivacySettings` | `settings/privacy` | [modules/settings/privacy.md](modules/settings/privacy.md) |
 | Account (incl. delete account) | `AccountSettings` | `settings/account` | [modules/settings/account.md](modules/settings/account.md) |
 | Notifications (push preferences) | `NotificationSettings` | `settings/notifications` | [modules/settings/notification-settings.md](modules/settings/notification-settings.md) |
-| Appearance (dark / light theme) | `AppearanceSettings` | `settings/appearance` | [modules/settings/appearance.md](modules/settings/appearance.md) |
+| Appearance (mood palette, dark / light) | `AppearanceSettings` | `settings/appearance` | [modules/settings/appearance.md](modules/settings/appearance.md) |
 | Report content | Report bottom sheet | — | [modules/settings/report.md](modules/settings/report.md) |
 
 ## Admin (moderators)

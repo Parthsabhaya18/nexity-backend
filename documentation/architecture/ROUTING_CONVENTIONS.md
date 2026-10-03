@@ -17,8 +17,6 @@ Every deep-link path below works with both prefixes:
 |------|--------|--------|------|
 | `login` | `Login` | — | No |
 | `register` | `Register` | — | No |
-| `verify-email/:token` | `VerifyEmail` | `token` | No |
-| `reset-password/:token` | `ResetPassword` | `token` | No |
 | `feed` | `Home` (HomeTab) | — | Yes |
 | `explore` | `Explore` (SearchTab) | — | Yes |
 | `search` | `Explore` with search focused | `q?` | Yes |
@@ -47,7 +45,7 @@ Every deep-link path below works with both prefixes:
 | `settings/privacy` | `PrivacySettings` | — | Yes |
 | `settings/account` | `AccountSettings` | — | Yes |
 
-Screens **without** a deep link (only reached in-app): `Welcome`, `ForgotPassword`, onboarding screens, `EditPost`, `EditReel`, `EditProfile`, `NewMessage`, `CreateGroup`, `BlockedAccounts`, `AdminModeration`, all bottom sheets.
+Screens **without** a deep link (only reached in-app): `VerifyEmail` and `ResetPassword` (email codes, not links), `ForgotPassword`, onboarding screens, `EditPost`, `EditReel`, `EditProfile`, `NewMessage`, `CreateGroup`, `BlockedAccounts`, `AdminModeration`, all bottom sheets.
 
 ### Rules
 

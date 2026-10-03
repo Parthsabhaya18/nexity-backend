@@ -43,7 +43,7 @@ Platform rules, navigation map, permissions, and release process: **[MOBILE_APP.
 | HTTP framework | Express 5 + `helmet`, `compression`, `cors`, `pino-http` | Installed |
 | Validation | Zod 4 (request bodies, query, env) | Installed |
 | Auth | JWT access (15 min) + refresh (7 days) with rotation | Add |
-| DB | PostgreSQL (ORM: Prisma or Drizzle — pick one and record it here) | Add |
+| DB | MongoDB (local `mongod` in development, MongoDB Atlas in production) via Mongoose 9 — connection in `src/config/database.ts` | Installed |
 | Cache / pub-sub | Redis (rate limits, refresh token families, presence, chat fan-out) | Add |
 | Realtime | WebSocket server (`ws`) at `/ws/v1/chat` | Add |
 | **Media** | **Cloudinary** — posts, reels, stories, avatars, DM attachments | Add |
@@ -76,7 +76,9 @@ Shared types: keep request/response Zod schemas in the backend; mirror TypeScrip
 | Variable | Purpose |
 |----------|---------|
 | `PORT` | API port (default `4000`) |
-| `DATABASE_URL` | PostgreSQL |
+| `MONGODB_URI` | MongoDB connection string (`mongodb://` or `mongodb+srv://`); required except in tests |
+| `MONGODB_DB_NAME` | Database name (default `nexity`); `nexity_dev` locally, `nexity` in production |
+| `MONGODB_MAX_POOL_SIZE`, `MONGODB_SERVER_SELECTION_TIMEOUT_MS` | Driver tuning (defaults `10`, `10000`) |
 | `REDIS_URL` | Cache, chat, rate limits |
 | `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` | Token signing |
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Media signing |

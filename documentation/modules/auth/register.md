@@ -1,48 +1,53 @@
 # Register
 
-**Screen:** `Register` (AuthStack)  
+**Screen:** `Register` (AuthStack, pushed from `Login`)  
 **Deep link:** `nexity://register`  
 **Theme:** Dark & light from device setting (logged out) — [THEMING.md](../../architecture/THEMING.md)  
-**Auth required:** No
+**Auth required:** No  
+**Status:** Implemented (backend + mobile)
 
 ## Purpose
 
-Create a new account with email, username, password, and accept terms.
+Create a new account (18+ only). The user then confirms their email with a 6-digit code ([email-verification.md](email-verification.md)).
 
 ## UI
+
+Header: back button, **18+ only** pill, **Create your account**, "It takes less than a minute."
 
 ### Fields
 
 | Field | Rules | Input props |
 |-------|-------|-------------|
-| Email | Valid email, unique | `keyboardType="email-address"`, `autoCapitalize="none"`, `textContentType="emailAddress"`, `autoComplete="email"` |
-| Username | 3–30 chars, `[a-zA-Z0-9_.]`, unique, no spaces | `autoCapitalize="none"`, `autoCorrect={false}`, `textContentType="username"` |
-| Display name | 1–50 chars | `textContentType="name"`, `autoComplete="name"` |
-| Password | See [AUTH_AND_SECURITY.md](../../architecture/AUTH_AND_SECURITY.md) | `secureTextEntry`, `textContentType="newPassword"`, `autoComplete="password-new"` |
-| Confirm password | Must match | same as password |
-| Terms checkbox | Required | Checkbox row; **Terms** and **Privacy Policy** open in an in-app browser |
+| Full name (`display_name`) | 2–50 chars | `autoCapitalize="words"`, `textContentType="name"`, `autoComplete="name"` |
+| Username | 3–30 chars, `[a-z0-9._]`, stored lowercase, unique. Hint: "Lowercase letters, numbers, dots and underscores." Live ✓ / ✗ check (debounced 400 ms) | `autoCapitalize="none"`, `autoCorrect={false}`, `autoComplete="username-new"` |
+| Email | Valid email, unique, lowercased | `keyboardType="email-address"`, `autoCapitalize="none"`, `textContentType="emailAddress"`, `autoComplete="email"` |
+| Password | 8–128 chars, at least one letter and one number; strength meter (Too weak → Strong) | Show/Hide toggle, `textContentType="newPassword"`, `autoComplete="password-new"` |
+| Gender | Chips: Woman, Man, Non-binary, Prefer not to say | — |
+| Date of birth | `DD/MM/YYYY` masked numeric field; must be 18+. Hint: "You must be 18 or older. Your birthday is never shown publicly." | `keyboardType="number-pad"`, `autoComplete="birthdate-full"` |
+| Terms checkbox | Required; **Terms** and **Privacy Policy** links | — |
 
 - Scrollable, keyboard-aware form; `returnKeyType="next"` moves focus field by field.
-- iOS suggests a strong password (Keychain); Android Autofill may offer one.
-- Bottom link: **Already have an account? Log in** → `Login`.
+- Server field errors (`EMAIL_TAKEN`, `USERNAME_TAKEN`, `VALIDATION_ERROR` details) are shown under the matching field.
+- Bottom link: **Already have an account? Log in** → back to `Login`.
 
 ### Success flow
 
-1. API returns `201` with user stub (may not issue full session until email verified — product choice).
-2. Replace with `VerifyEmail` screen showing "Check your inbox" (user cannot go back to the filled form).
+1. API returns `201` with a user stub and `resend_available_in`. No session yet.
+2. Navigate to `VerifyEmail` (`mode: 'register'`). A correct code signs the user in.
 
 ## API
 
 ### `POST /api/v1/auth/register`
 
-**Body:**
-
 ```json
 {
-  "email": "jane@example.com",
+  "display_name": "Jane Doe",
   "username": "jane_doe",
-  "display_name": "Jane",
-  "password": "secretPass1"
+  "email": "jane@example.com",
+  "password": "secretPass1",
+  "gender": "woman",
+  "date_of_birth": "1998-03-15",
+  "accept_terms": true
 }
 ```
 
@@ -50,49 +55,37 @@ Create a new account with email, username, password, and accept terms.
 
 ```json
 {
-  "user": {
-    "id": "uuid",
-    "username": "jane_doe",
-    "email": "jane@example.com",
-    "is_verified": false
-  },
-  "verification_sent": true
+  "user": { "id": "…", "username": "jane_doe", "email": "jane@example.com", "is_verified": false },
+  "resend_available_in": 30
 }
 ```
 
-If the product issues a session at registration, the body also contains `access_token`, `refresh_token`, `expires_in` (same as login).
+`dev_code` is included only in development when SMTP is not configured.
 
 **Errors:**
 
-| Code | HTTP |
-|------|------|
-| `EMAIL_TAKEN` | 409 |
-| `USERNAME_TAKEN` | 409 |
-| `VALIDATION_ERROR` | 400 |
+| Code | HTTP | Details |
+|------|------|---------|
+| `EMAIL_TAKEN` | 409 | `{ field: "email" }` |
+| `USERNAME_TAKEN` | 409 | `{ field: "username" }` |
+| `VALIDATION_ERROR` | 400 | `[{ path, message }]` (e.g. under 18) |
 
 ### `GET /api/v1/auth/username-available?username=`
 
-**Success `200`:** `{ "available": true }`
-
-Use for a debounced check while typing.
+**Success `200`:** `{ "available": true }` or `{ "available": false, "reason": "taken" | "invalid" }`
 
 ## Business rules
 
-- Normalize email to lowercase before store.
-- Username stored lowercase for uniqueness checks; display may preserve case in display_name only.
-- Send verification email asynchronously (queue). The email link is `https://nexity.com/verify-email/{token}` so it opens the app.
-- Minimum age per store policy (13+); add a birthday field if required by your market.
+- Email and username stored lowercase.
+- Minimum age **18** (checked on client and server).
+- Signing up again with an email that is still unverified replaces the pending account and sends a new code; an unverified account holds its username for 24 h.
+- Passwords hashed with bcrypt (cost 12).
 
 ## Acceptance criteria
 
-- [ ] Duplicate email/username shows field-level errors.
-- [ ] Username availability updates while typing (debounced 400 ms) with a ✓ / ✗ icon.
-- [ ] Terms must be checked to submit; Terms and Privacy links open in-app.
-- [ ] User lands on verification instructions screen.
-- [ ] Keyboard never hides the focused field or the Sign up button on small phones.
-
-## Cursor checklist
-
-- [ ] `RegisterScreen` + validation
-- [ ] Register API + error mapping
-- [ ] Email verification mailer stub in dev
+- [x] Duplicate email/username shows field-level errors.
+- [x] Username availability updates while typing with a ✓ / ✗ icon.
+- [x] Terms must be checked to submit.
+- [x] Under-18 date of birth rejected.
+- [x] User lands on the code verification screen.
+- [ ] Keyboard never hides the focused field or the Create account button on small phones (verify on devices).

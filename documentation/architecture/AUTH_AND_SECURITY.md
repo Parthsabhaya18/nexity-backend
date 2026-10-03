@@ -11,7 +11,8 @@ The clients are native iOS and Android apps. There are **no cookies** — tokens
 
 Never store tokens in AsyncStorage, logs, crash reports, or Redux devtools.
 
-- Login and register return both `access_token` and `refresh_token` in the JSON body.
+- Login and email verification return both `access_token` and `refresh_token` in the JSON body (register returns no session until the email code is verified).
+- Access tokens are HS256 JWTs (`typ: access`); refresh tokens are random opaque strings stored server-side only as SHA-256 hashes.
 - Rotate refresh on every use; reusing an old refresh token invalidates the whole token family (theft detection) and logs out that device.
 - Each refresh token family is tied to a **device session** (platform, device model, app version, last active) so users can see and sign out devices (Phase 2 UI).
 - Logout revokes the refresh token server-side and unregisters the push device.
@@ -43,19 +44,37 @@ Never store tokens in AsyncStorage, logs, crash reports, or Redux devtools.
 
 Face ID / Touch ID (iOS) and fingerprint/face (Android BiometricPrompt) can protect the stored refresh token (`accessControl: BIOMETRY_ANY`). iOS requires `NSFaceIDUsageDescription`.
 
+## Email codes (OTP)
+
+Email verification and password reset use **6-digit codes** sent by email (no links).
+
+| Rule | Value |
+|------|-------|
+| Code storage | HMAC-SHA256 hash only; one active code per user and purpose (`verify_email`, `reset_password`) |
+| Lifetime | 10 minutes |
+| Verify attempts | 5 per code, then a new code is required |
+| Resend cooldown | 30 s (`resend_available_in` in responses) |
+| Sends | 5 per hour per user and purpose |
+| Reset token | JWT `typ: pwd_reset`, 15 min, bound to the current password version (single use) |
+
+- Forgot-password and resend responses are identical for unknown emails (no account enumeration).
+- Development: when `SMTP_HOST` is empty and `NODE_ENV` is not production, the email is logged and the code is returned as `dev_code`. Production requires SMTP.
+- A password reset revokes all refresh tokens, and access tokens issued before the change are rejected.
+
 ## Password policy
 
 - Minimum 8 characters, at least one letter and one number.
-- Hash: Argon2id or bcrypt (cost appropriate for production).
+- Hash: bcrypt, cost 12.
+- Login: 5 wrong passwords lock the account for 15 minutes (`TOO_MANY_ATTEMPTS`); unknown users get the same `INVALID_CREDENTIALS` response and timing.
 - Inputs use `textContentType="password"` / `"newPassword"` (iOS) and `autoComplete="password"` / `"password-new"` (Android) so password managers work.
 
 ## Rate limiting (defaults)
 
 | Endpoint group | Limit |
 |----------------|-------|
-| Login / register | 10 req / 15 min / IP |
-| Refresh | 30 req / 15 min / device |
-| Password reset email | 3 req / hour / email |
+| Login | 20 req / 15 min / IP + identifier |
+| All `/auth/*` | 60 req / 15 min / IP |
+| Email codes | 30 s cooldown, 5 / hour / user |
 | Post create | 30 / hour / user |
 | Report | 20 / day / user |
 

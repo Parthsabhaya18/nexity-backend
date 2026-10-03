@@ -23,6 +23,6 @@ Schedules deletion in 30 days or immediate per policy (document chosen behavior:
 
 ## Acceptance criteria
 
-- [ ] Delete removes public profile, unregisters push, and logs the user out to `Welcome` on this device.
+- [ ] Delete removes public profile, unregisters push, and logs the user out to `Login` on this device.
 - [ ] Delete account flow is reachable within 3 taps from the profile (store review requirement).
 - [ ] Google Play listing also provides a web URL for deletion requests (store requirement).

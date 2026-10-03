@@ -1,24 +1,18 @@
 # Welcome
 
-**Screen:** `Welcome` (AuthStack initial route)  
-**Deep link:** none  
-**Theme:** Dark & light from device setting (logged out) — [THEMING.md](../../architecture/THEMING.md)  
-**Auth required:** No
+**Screen:** `Welcome` — **not shown** in the current app  
+**Status:** Removed from the flow
 
-## Purpose
+## Decision
 
-First screen for logged-out users after the splash: brand + two clear choices.
+The app opens **directly on `Login`** for logged-out users. There is no Welcome screen with separate **Log in** / **Create account** buttons; `Login` links to `Register` ("New to Nexity? **Create account**").
 
-## UI
+Startup:
 
-- Logo (light/dark variant) and short tagline centered.
-- Primary button **Create new account** → `Register`.
-- Secondary button **Log in** → `Login`.
-- Footer: Terms and Privacy Policy links (in-app browser).
-- Shown only when there is no stored refresh token; a returning signed-in user never sees it.
+1. Splash (logo + spinner) while the stored refresh token is checked.
+2. Valid session → `Home`.
+3. No session → `Login` (AuthStack initial route).
 
-## Acceptance criteria
+Android back on `Login` exits the app.
 
-- [ ] Appears after splash on first install on iOS and Android.
-- [ ] Android back exits the app.
-- [ ] Respects safe areas on notch / Dynamic Island / punch-hole devices.
+If a Welcome / intro screen is added later (e.g. onboarding carousel), it should be shown only on first install and must not block returning users.

@@ -1,7 +1,7 @@
 # Logout
 
 **Screen:** none (action from `Settings` → **Log out**)  
-**Theme:** Keep the device theme value after logout so the login screen stays in the user's theme — [THEMING.md](../../architecture/THEMING.md)
+**Theme:** Keep the device appearance value and the selected mood after logout so the login screen stays in the user's theme — [THEMING.md](../../architecture/THEMING.md)
 
 ## Purpose
 

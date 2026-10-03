@@ -10,7 +10,7 @@ Full specs for **Nexity**, a native **iOS + Android** social app (React Native i
 | Push notifications | [architecture/PUSH_NOTIFICATIONS.md](./architecture/PUSH_NOTIFICATIONS.md) |
 | Cloudinary | [architecture/CLOUDINARY.md](./architecture/CLOUDINARY.md) |
 | Instagram UX | [architecture/INSTAGRAM_CONTENT_UX.md](./architecture/INSTAGRAM_CONTENT_UX.md) |
-| Dark / light theme | [architecture/THEMING.md](./architecture/THEMING.md), [modules/settings/appearance.md](./modules/settings/appearance.md) |
+| Mood palette and dark / light appearance | [architecture/THEMING.md](./architecture/THEMING.md), [modules/settings/appearance.md](./modules/settings/appearance.md) |
 | API list | [API_QUICK_REFERENCE.md](./API_QUICK_REFERENCE.md) |
 
 In Cursor chat: `@documentation/INDEX.md`

@@ -43,13 +43,12 @@ Built with **React Navigation 7**: native-stack for screens, bottom-tabs for the
 
 ```
 RootStack (native-stack)
-├── AuthStack                       (shown when logged out)
-│   ├── Welcome
-│   ├── Login
+├── AuthStack                       (shown when logged out; no Welcome screen)
+│   ├── Login                       initial route
 │   ├── Register
-│   ├── VerifyEmail
+│   ├── VerifyEmail                 6-digit code; mode 'register' | 'reset'
 │   ├── ForgotPassword
-│   └── ResetPassword
+│   └── ResetPassword               after a verified reset code
 ├── OnboardingStack                 (logged in, onboarding not completed)
 │   ├── OnboardingWelcome
 │   ├── OnboardingAvatar
@@ -247,7 +246,7 @@ Store requirements to plan for:
 - [ ] Respects safe areas (notch, Dynamic Island, cutout, home indicator, nav bar).
 - [ ] Android back button behaves correctly (closes sheet → pops screen → exits app from tab root).
 - [ ] Keyboard never covers the focused input or the primary button.
-- [ ] Dark and light theme per [THEMING.md](THEMING.md).
+- [ ] Dark appearance and the selected mood palette for light appearance, per [THEMING.md](THEMING.md).
 - [ ] Offline state is handled (banner, no crash, retry).
 - [ ] Permissions are requested only when needed and denial is handled.
 - [ ] VoiceOver / TalkBack can reach every action.
