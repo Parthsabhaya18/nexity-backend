@@ -46,6 +46,14 @@ const envSchema = z
     SMTP_USER: z.preprocess(emptyToUndefined, z.string().optional()),
     SMTP_PASS: z.preprocess(emptyToUndefined, z.string().optional()),
     MAIL_FROM: z.string().default('Nexity <no-reply@nexity.app>'),
+
+    KEEP_ALIVE_ENABLED: z
+      .enum(['true', 'false'])
+      .default('true')
+      .transform((v) => v === 'true'),
+    KEEP_ALIVE_INTERVAL_MS: z.coerce.number().int().positive().default(10 * 60 * 1000),
+    RENDER_EXTERNAL_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
+    APP_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
   })
   .superRefine((cfg, ctx) => {
     // Tests spin up their own in-memory MongoDB, so the URI is only mandatory outside `test`.
@@ -82,7 +90,7 @@ export const isProduction = env.NODE_ENV === 'production';
 export const jwtAccessSecret =
   env.JWT_ACCESS_SECRET ?? 'nexity-development-only-secret-change-me-0000';
 
-export const isMailConfigured = Boolean(env.SMTP_HOST);
+export const isMailConfigured = env.NODE_ENV !== 'test' && Boolean(env.SMTP_HOST);
 
 /** Without SMTP outside production, OTP codes are returned in API responses so the app can be tested. */
 export const exposeDevOtp = !isProduction && !isMailConfigured;

@@ -3,6 +3,7 @@ import type { Server } from 'node:http';
 import { createApp } from './app';
 import { connectDatabase, disconnectDatabase } from './config/database';
 import { env } from './config/env';
+import { startKeepAlive, stopKeepAlive } from './utils/keepAlive';
 import { logger } from './utils/logger';
 
 let server: Server | undefined;
@@ -14,6 +15,7 @@ async function start() {
   const app = createApp();
   server = app.listen(env.PORT, env.HOST, () => {
     logger.info(`Nexity API listening on http://${env.HOST}:${env.PORT}${env.API_PREFIX}`);
+    startKeepAlive();
   });
   server.on('error', (err) => {
     logger.fatal({ err }, 'HTTP server error');
@@ -25,6 +27,7 @@ async function shutdown(signal: string, exitCode = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
   logger.info(`${signal} received, shutting down`);
+  stopKeepAlive();
   setTimeout(() => process.exit(1), 10_000).unref();
 
   try {
