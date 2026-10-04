@@ -29,7 +29,8 @@ Nexity is a **native iOS + Android app** (React Native) talking to a **Node.js R
 | Keyboard | `react-native-keyboard-controller` | Add |
 | Haptics | `react-native-haptic-feedback` | Add |
 | Realtime | Native `WebSocket` to `/ws/v1/chat` | Built in |
-| Media upload | Direct signed upload from the device to Cloudinary ([CLOUDINARY.md](CLOUDINARY.md)) | — |
+| Media pick / camera | `react-native-image-picker` (resize + JPEG on device) | Installed |
+| Media upload | Presigned POST from the device straight to S3 ([MEDIA_STORAGE.md](MEDIA_STORAGE.md)) | Installed |
 | Theming | `ThemeProvider` + `useColorScheme` + semantic tokens ([THEMING.md](THEMING.md)) | Add |
 | Testing | Jest + React Native Testing Library; Maestro E2E on both platforms | Jest installed |
 
@@ -46,8 +47,8 @@ Platform rules, navigation map, permissions, and release process: **[MOBILE_APP.
 | DB | MongoDB (local `mongod` in development, MongoDB Atlas in production) via Mongoose 9 — connection in `src/config/database.ts` | Installed |
 | Cache / pub-sub | Redis (rate limits, refresh token families, presence, chat fan-out) | Add |
 | Realtime | WebSocket server (`ws`) at `/ws/v1/chat` | Add |
-| **Media** | **Cloudinary** — posts, reels, stories, avatars, DM attachments | Add |
-| Video processing | Cloudinary eager transformations / streaming profiles (no self-hosted ffmpeg) | — |
+| **Media** | **AWS S3 + CloudFront** — posts, reels, stories, avatars, DM attachments (`@aws-sdk/client-s3`, `@aws-sdk/s3-presigned-post`) | Installed |
+| Video processing | None yet: progressive MP4. AWS MediaConvert (HLS) later | — |
 | Push | `firebase-admin` (FCM → Android, APNs → iOS) | Add |
 | Email | Transactional provider (verify email, reset password) | Add |
 | Testing | Vitest + Supertest | Installed |
@@ -81,7 +82,7 @@ Shared types: keep request/response Zod schemas in the backend; mirror TypeScrip
 | `MONGODB_MAX_POOL_SIZE`, `MONGODB_SERVER_SELECTION_TIMEOUT_MS` | Driver tuning (defaults `10`, `10000`) |
 | `REDIS_URL` | Cache, chat, rate limits |
 | `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` | Token signing |
-| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Media signing |
+| `AWS_REGION`, `S3_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `MEDIA_PUBLIC_BASE_URL`, `S3_ENDPOINT`, `MEDIA_UPLOAD_URL_TTL_SECONDS` | Media storage ([MEDIA_STORAGE.md](MEDIA_STORAGE.md)) |
 | `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` | Push notifications |
 | `APP_LINK_BASE_URL` | `https://nexity.com` — base for email links that open the app (universal / app links) |
 | `IOS_MIN_VERSION`, `ANDROID_MIN_VERSION` | Force-update threshold returned by `GET /app/config` |
@@ -95,18 +96,20 @@ Shared types: keep request/response Zod schemas in the backend; mirror TypeScrip
 | `wsUrl` | `ws://localhost:4000/ws/v1/chat` | `wss://api.nexity.com/ws/v1/chat` |
 | `appLinkBaseUrl` | `https://nexity.com` | `https://nexity.com` |
 
-Never put secrets (Cloudinary secret, JWT secrets, Firebase private key) in the mobile app — anything in the bundle can be extracted.
+Never put secrets (AWS keys, JWT secrets, Firebase private key) in the mobile app — anything in the bundle can be extracted.
 
 ## Media limits (default)
 
-Enforce **on the device before upload**, at the API sign endpoint, and in the Cloudinary preset.
+Like Instagram, users are never asked to shrink or shorten a file: the app compresses on the device, and the server ceilings are only abuse guards that a compressed file never reaches. Enforced at `POST /media/uploads`, in the S3 POST policy (size) and at `complete` (size + real format). Source: `backend/src/modules/media/media.rules.ts`.
 
-| Type | Max size | Max duration | Accepted input |
-|------|----------|--------------|----------------|
-| Post image | 10 MB | — | jpg, png, webp, heic |
-| Post video | 100 MB | 10 min | mp4, mov |
-| Reel | 100 MB | 90 sec | mp4, mov |
-| Story | 50 MB | 60 sec | jpg, png, heic, mp4, mov |
-| Avatar | 2 MB (after on-device resize) | — | jpg, png, heic |
+Accepted input everywhere: images jpg, png, webp, heic/heif; videos mp4, mov.
+
+| Type | On-device processing | Server ceiling |
+|------|----------------------|----------------|
+| Avatar (image only) | Resize to 640 px, JPEG 0.8 | 20 MB |
+| Post / story / message image | Resize to 1440 / 1920 / 1600 px, JPEG 0.8 | 50 MB |
+| Post / reel / story / message video | Compressed (`auto`) when over 10 MB, MP4 | 4 GB |
+
+There is **no upload duration limit**. Reels and stories pick a playback window (`trim_start_ms` / `trim_end_ms`) in their own modules instead of rejecting long videos.
 
 Document changes in the relevant module file when limits change.

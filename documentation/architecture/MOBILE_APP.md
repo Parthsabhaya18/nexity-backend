@@ -25,7 +25,7 @@ src/
   navigation/     # RootNavigator, tab + stack navigators, linking config, param types
   screens/        # One folder per module: screens/auth/LoginScreen.tsx, screens/posts/...
   components/     # Shared UI (PostCard, Avatar, BottomSheet, Button, EmptyState...)
-  features/       # Hooks + logic per domain (useFeed, useCloudinaryUpload, useChatSocket)
+  features/       # Hooks + logic per domain (useFeed, useMediaUpload, useChatSocket)
   services/
     api/          # axios client, interceptors, one file per resource (auth.ts, posts.ts...)
     storage/      # secureStore (Keychain/Keystore), keyValue (AsyncStorage)
@@ -57,12 +57,14 @@ RootStack (native-stack)
 ├── MainTabs (bottom-tabs)          (logged in)
 │   ├── HomeTab     → HomeStack     root: Home (feed + stories tray)
 │   ├── SearchTab   → SearchStack   root: Explore (search bar on top)
-│   ├── CreateTab   → opens CreateSheet (does not switch tab)
+│   ├── PremiumTab  → Premium (icon always in brand colour)
 │   ├── ReelsTab    → ReelsStack    root: Reels (always dark)
-│   └── ProfileTab  → ProfileStack  root: MyProfile
+│   └── Create (+)  → round gradient button outside the pill, on its right; opens CreateSheet (not a tab)
+│
+│   No Profile tab: own profile (MyProfile) opens from the avatar in the Home header.
 │
 │   Shared screens pushed inside any tab stack:
-│   PostDetail, UserProfile, Followers, HashtagFeed, ReelDetail,
+│   MyProfile, PostDetail, UserProfile, Followers, HashtagFeed, ReelDetail,
 │   Notifications, Inbox, ChatThread, SavedPosts, FollowRequests,
 │   Settings, PrivacySettings, AccountSettings, NotificationSettings,
 │   AppearanceSettings, BlockedAccounts, Groups, GroupDetail, AdminModeration
@@ -109,7 +111,13 @@ Email links (verify email, reset password) **must** use `https://nexity.com/...`
 
 ## Permissions
 
-Ask **only when the feature is used** (just-in-time), never at launch. Show a short in-app explainer before the system prompt. If denied permanently, show an "Open Settings" button (`Linking.openSettings()`). Use `react-native-permissions` for both platforms.
+Ask **only when the feature is used** (just-in-time), never at launch, and always with the phone’s **own** permission dialog first. No in-app explainer screen comes before it.
+
+- **Story, Post, Reel** open straight on the in-app camera (`CaptureView`, built on `react-native-vision-camera`), like the prototype. Opening it asks for **Camera**, then **Microphone** (story and reel record video), then **Photos** for the recent-photos strip, each as the system dialog.
+- **Denied once** (Android can still ask): the camera area shows “Camera access is off” with **Try again**, which shows the system dialog again.
+- **Denied permanently** (Android “Don’t allow” twice / “Don’t ask again”, or any iOS deny): only now offer **Open Settings**. In the camera area it is a button; elsewhere it is one popup, **Not now** or **Open Settings** (`ensureAccess` → `showPermissionPrompt`).
+- Open Settings goes to that permission’s own switch: Camera opens Camera, Microphone opens Microphone, Location opens Location, Photos opens Photos (Files and media on Android 12). If that page is missing, the app permission list, then the app info screen. On iOS, Settings → Nexity holds those switches.
+- Without Photos access the strip shows only the upload tile. The gallery button opens the system picker, which works without that permission.
 
 | Feature | iOS `Info.plist` key (usage string required) | Android permission |
 |---------|----------------------------------------------|--------------------|
@@ -156,7 +164,7 @@ General rules:
 
 | Need | Library |
 |------|---------|
-| Gallery grid (Instagram-style picker, multi-select up to 10) | `@react-native-camera-roll/camera-roll` |
+| Gallery grid (Instagram-style picker, multi-select up to 20 for posts, 10 for stories) | `@react-native-camera-roll/camera-roll` |
 | Camera capture (photo + video, flip, flash) | `react-native-vision-camera` |
 | Crop (avatar 1:1, post aspects) | Custom crop view with gesture handler + Reanimated, or `react-native-image-crop-picker` for avatar |
 | Video playback (feed, reels, stories) | `react-native-video` |

@@ -1,0 +1,106 @@
+import { type Types } from 'mongoose';
+
+import { ApiError } from '../../utils/ApiError';
+import { avatarUrlOf, User, type UserDoc } from '../users/user.model';
+import { Notification } from './notification.model';
+
+const pageOf = (limit: number) => Math.min(50, Math.max(1, limit || 20));
+
+function snippet(body: string) {
+  return body.replace(/\s+/g, ' ').trim().slice(0, 80);
+}
+
+/** In-app activity. Skips notifying yourself. */
+export async function notifyComment(opts: {
+  actor: UserDoc;
+  recipientId: Types.ObjectId;
+  kind: 'post' | 'reel';
+  body: string;
+  postId?: Types.ObjectId | null;
+  reelId?: Types.ObjectId | null;
+  commentId: Types.ObjectId;
+  reply?: boolean;
+}) {
+  if (opts.actor._id.equals(opts.recipientId)) return;
+  const action =
+    opts.kind === 'reel'
+      ? 'commented on your reel'
+      : opts.reply
+        ? 'replied to your comment'
+        : 'commented';
+  await Notification.create({
+    recipient_id: opts.recipientId,
+    actor_id: opts.actor._id,
+    type: opts.kind === 'reel' ? 'comment_reel' : 'comment_post',
+    text: `${opts.actor.username} ${action}: ${snippet(opts.body)}`,
+    post_id: opts.postId ?? null,
+    reel_id: opts.reelId ?? null,
+    comment_id: opts.commentId,
+  });
+}
+
+export async function listNotifications(
+  viewer: UserDoc,
+  cursor: string | undefined,
+  limit: number,
+) {
+  const take = pageOf(limit);
+  const filter: Record<string, unknown> = { recipient_id: viewer._id };
+  if (cursor) filter._id = { $lt: cursor };
+  const rows = await Notification.find(filter)
+    .sort({ _id: -1 })
+    .limit(take + 1);
+  const page = rows.slice(0, take);
+  const actors = await User.find({ _id: { $in: page.map((n) => n.actor_id) } });
+  const byId = new Map(actors.map((u) => [u.id as string, u]));
+  const items = await Promise.all(
+    page.map(async (n) => {
+      const actor = byId.get(n.actor_id.toHexString());
+      return {
+        id: n.id as string,
+        type: n.type,
+        text: n.text,
+        post_id: n.post_id ? n.post_id.toHexString() : null,
+        reel_id: n.reel_id ? n.reel_id.toHexString() : null,
+        read: n.read_at != null,
+        created_at: (n.get('created_at') as Date).toISOString(),
+        actor: actor
+          ? {
+              id: actor.id as string,
+              username: actor.username,
+              display_name: actor.display_name,
+              avatar_url: await avatarUrlOf(actor),
+            }
+          : null,
+      };
+    }),
+  );
+  return {
+    items,
+    next_cursor: rows.length > take ? (page[page.length - 1]!.id as string) : null,
+  };
+}
+
+export async function unreadCount(viewer: UserDoc) {
+  const notifications = await Notification.countDocuments({
+    recipient_id: viewer._id,
+    read_at: null,
+  });
+  return { notifications, messages: 0 };
+}
+
+export async function markRead(viewer: UserDoc, id: string) {
+  const row = await Notification.findOne({ _id: id, recipient_id: viewer._id });
+  if (!row) throw ApiError.notFound('That notification is no longer available.');
+  if (!row.read_at) {
+    row.read_at = new Date();
+    await row.save();
+  }
+}
+
+export async function markAllRead(viewer: UserDoc) {
+  await Notification.updateMany(
+    { recipient_id: viewer._id, read_at: null },
+    { $set: { read_at: new Date() } },
+  );
+}

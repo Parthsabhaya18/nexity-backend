@@ -23,6 +23,6 @@ Block removes all interaction; mute hides posts/stories in feed only (optional v
 
 ## Acceptance criteria
 
-- [ ] Blocked user cannot DM or comment on your content.
-- [ ] After blocking, their content disappears from your feed, tray, and search without restarting the app (cache invalidated).
-- [ ] Unblock restores ability to interact but not auto-follow.
+- [x] Blocked user cannot see the profile and cannot comment (their content is hidden both ways).
+- [x] After blocking, their content disappears from feed, story tray, and search.
+- [x] Unblock restores the profile but does not follow them again.

@@ -58,7 +58,8 @@ In development without SMTP, code-sending responses also include `dev_code`.
 | POST | `/users/:id/block` |
 | DELETE | `/users/:id/block` |
 | GET | `/users/me/follow-requests` |
-| GET | `/users/search` |
+| DELETE | `/users/me/followers/:userId` (remove follower) |
+| GET | `/users/search` (planned for New message; app search uses `/search?type=users`) |
 
 ## Feed & explore
 
@@ -72,8 +73,31 @@ In development without SMTP, code-sending responses also include `dev_code`.
 
 | Method | Path |
 |--------|------|
-| POST | `/posts` |
-| GET | `/posts/:id` |
+| POST | `/posts` (implemented; `201`, or `200` when `client_upload_id` repeats) |
+| GET | `/posts/:id` (implemented) |
+| PATCH | `/posts/:id` (caption, location, alt text, like/comment settings) |
+| DELETE | `/posts/:id` (soft delete) |
+| POST | `/posts/:id/like` (toggle) |
+| POST | `/posts/:id/save` (toggle) |
+| GET | `/posts/:id/comments` |
+| POST | `/posts/:id/comments` |
+| DELETE | `/comments/:id` |
+| GET | `/feed` |
+| GET | `/users/me/saved-posts` |
+| GET | `/users/:id/posts` |
+| GET | `/tags/:tag/posts` |
+| POST | `/stories` |
+| GET | `/stories/tray` |
+| POST | `/stories/:id/view` |
+| POST | `/stories/:id/vote` |
+| POST | `/stories/:id/reply` |
+| DELETE | `/stories/:id` |
+| POST | `/reels` |
+| GET | `/reels` |
+| GET | `/users/:id/reels` |
+| POST | `/reels/:id/like` |
+| DELETE | `/reels/:id` |
+| PATCH | `/users/me/preferences` (`theme`, `mood`) |
 | PATCH | `/posts/:id` |
 | DELETE | `/posts/:id` |
 | POST | `/posts/:id/like` |
@@ -103,6 +127,8 @@ In development without SMTP, code-sending responses also include `dev_code`.
 | POST | `/stories` |
 | GET | `/users/:id/stories` |
 | POST | `/stories/:id/view` |
+| POST | `/stories/:id/vote` |
+| POST | `/stories/:id/reply` |
 
 ## Messages
 
@@ -144,13 +170,14 @@ See [PUSH_NOTIFICATIONS.md](architecture/PUSH_NOTIFICATIONS.md).
 | POST | `/groups/:id/join` |
 | POST | `/groups/:id/leave` |
 
-## Media (Cloudinary)
+## Media (S3 — [MEDIA_STORAGE.md](architecture/MEDIA_STORAGE.md))
 
 | Method | Path |
 |--------|------|
-| POST | `/media/cloudinary-sign` |
-| POST | `/media/confirm` |
-| GET | `/media/:mediaId` |
+| POST | `/media/uploads` |
+| POST | `/media/:id/complete` |
+| GET | `/media/:id` |
+| DELETE | `/media/:id` |
 
 ## Posts (extra)
 

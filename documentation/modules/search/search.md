@@ -33,8 +33,15 @@ Search users, hashtags, and posts by keyword.
 }
 ```
 
+## Implementation status
+
+- Implemented: the `Search` tab searches **users** only (`type=users`). A query matches anywhere in the username or display name (`smith` finds `bob.smith`); active, verified accounts only; returns `{ "users": UserSummary[] }` (same shape as follower lists, with `follow_status`), each row has a Follow button. `limit` default 20, max 50. Rate limited per account (`searchLimiter`).
+- Empty search box calls `GET /users/suggestions` and shows **Suggested for you**: verified people the viewer does not already follow and has not blocked, most-followed first.
+- Also implemented for the post composer: `type=tags` → `{ "tags": [{ "name", "post_count" }] }` (hashtag prefix, most used first) and `type=places` → `{ "places": [{ "name", "post_count" }] }` (location names used on posts by public accounts or the viewer).
+- Not yet: Tags / Posts tabs in the Search screen, recent searches (needs AsyncStorage), trending tags.
+
 ## Acceptance criteria
 
-- [ ] Debounce input 300 ms; cancel in-flight request when the query changes.
-- [ ] Empty query shows recents + trending tags.
-- [ ] Tapping a user opens `UserProfile`; a tag opens `HashtagFeed`.
+- [x] Debounce input 300 ms; cancel in-flight request when the query changes.
+- [x] Empty query shows suggested people. A search shows matching profiles.
+- [ ] Tapping a user opens `UserProfile` (done); a tag opens `HashtagFeed`.

@@ -2,7 +2,8 @@ import type { Server } from 'node:http';
 
 import { createApp } from './app';
 import { connectDatabase, disconnectDatabase } from './config/database';
-import { env } from './config/env';
+import { env, isMediaConfigured } from './config/env';
+import { startMediaCleanup, stopMediaCleanup } from './modules/media/media.cleanup';
 import { startKeepAlive, stopKeepAlive } from './utils/keepAlive';
 import { logger } from './utils/logger';
 
@@ -16,6 +17,10 @@ async function start() {
   server = app.listen(env.PORT, env.HOST, () => {
     logger.info(`Nexity API listening on http://${env.HOST}:${env.PORT}${env.API_PREFIX}`);
     startKeepAlive();
+    startMediaCleanup();
+    if (!isMediaConfigured) {
+      logger.warn('S3 is not configured (AWS_REGION, S3_BUCKET); media uploads are disabled');
+    }
   });
   server.on('error', (err) => {
     logger.fatal({ err }, 'HTTP server error');
@@ -28,6 +33,7 @@ async function shutdown(signal: string, exitCode = 0) {
   shuttingDown = true;
   logger.info(`${signal} received, shutting down`);
   stopKeepAlive();
+  stopMediaCleanup();
   setTimeout(() => process.exit(1), 10_000).unref();
 
   try {

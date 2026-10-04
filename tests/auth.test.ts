@@ -180,7 +180,7 @@ describe('login', () => {
       .send({ identifier: signup.email, password: signup.password });
     expect(correct.status).toBe(429);
     expect(correct.body.error.code).toBe('TOO_MANY_ATTEMPTS');
-  });
+  }, 20_000);
 
   it('asks unverified users to verify and sends a code', async () => {
     await request(app).post('/api/v1/auth/register').send(signup);

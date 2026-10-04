@@ -15,7 +15,7 @@ Every screen's deep link works as `nexity://<path>` and `https://nexity.com/<pat
 | [architecture/DATA_MODELS.md](architecture/DATA_MODELS.md) | Database entities |
 | [architecture/AUTH_AND_SECURITY.md](architecture/AUTH_AND_SECURITY.md) | JWT, Keychain/Keystore storage, refresh, privacy, store rules |
 | [architecture/PUSH_NOTIFICATIONS.md](architecture/PUSH_NOTIFICATIONS.md) | FCM / APNs, device registration, channels, tap routing |
-| [architecture/CLOUDINARY.md](architecture/CLOUDINARY.md) | All image/video storage & uploads from the device |
+| [architecture/MEDIA_STORAGE.md](architecture/MEDIA_STORAGE.md) | All image/video storage (AWS S3) & uploads from the device |
 | [architecture/INSTAGRAM_CONTENT_UX.md](architecture/INSTAGRAM_CONTENT_UX.md) | Posts, Reels, Stories — IG parity, tabs, gestures |
 | [architecture/THEMING.md](architecture/THEMING.md) | Mood themes (replace Light / Dark / System for the whole app), plus dark & light appearance |
 
@@ -45,7 +45,7 @@ Every screen's deep link works as `nexity://<path>` and `https://nexity.com/<pat
 
 | Module | Screen | Deep link | Doc |
 |--------|--------|-----------|-----|
-| Create post | `CreatePostStack` (fullscreen modal) | `create/post` | [modules/posts/create-post.md](modules/posts/create-post.md) |
+| Create post | `CreatePostCrop` → `CreatePostDetails` (fullscreen modal) | `create/post` | [modules/posts/create-post.md](modules/posts/create-post.md) |
 | Post detail | `PostDetail` | `posts/:postId` | [modules/posts/post-detail.md](modules/posts/post-detail.md) |
 | Edit post | `EditPost` (modal) | — | [modules/posts/edit-post.md](modules/posts/edit-post.md) |
 | Comments | Comments bottom sheet | `posts/:postId/comments` | [modules/posts/comments.md](modules/posts/comments.md) |
@@ -73,7 +73,7 @@ Every screen's deep link works as `nexity://<path>` and `https://nexity.com/<pat
 
 | Module | Screen | Deep link | Doc |
 |--------|--------|-----------|-----|
-| Profile | `MyProfile` (ProfileTab), `UserProfile` | `u/:username` | [modules/profile/profile.md](modules/profile/profile.md) |
+| Profile | `MyProfile` (from Home header avatar), `UserProfile` | `u/:username` | [modules/profile/profile.md](modules/profile/profile.md) |
 | Edit profile | `EditProfile` (modal) | — | [modules/profile/edit-profile.md](modules/profile/edit-profile.md) |
 | Followers / following | `Followers` (top tabs) | `u/:username/followers`, `u/:username/following` | [modules/profile/followers.md](modules/profile/followers.md) |
 | Follow requests | `FollowRequests` | `follow-requests` | [modules/profile/follow-requests.md](modules/profile/follow-requests.md) |
@@ -105,6 +105,7 @@ Every screen's deep link works as `nexity://<path>` and `https://nexity.com/<pat
 | Notifications (push preferences) | `NotificationSettings` | `settings/notifications` | [modules/settings/notification-settings.md](modules/settings/notification-settings.md) |
 | Theme (Light / Dark / System or a mood) | `AppearanceSettings` | `settings/appearance` | [modules/settings/appearance.md](modules/settings/appearance.md) |
 | Report content | Report bottom sheet | — | [modules/settings/report.md](modules/settings/report.md) |
+| Saved posts | Profile tab and `SavedPosts` | — | [modules/posts/create-post.md](modules/posts/create-post.md) |
 
 ## Admin (moderators)
 
