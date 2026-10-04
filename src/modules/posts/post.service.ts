@@ -2,19 +2,33 @@ import mongoose from 'mongoose';
 
 import { ApiError } from '../../utils/ApiError';
 import { canViewContent, findVisibleUser, toUserSummaries } from '../follows/follow.service';
-import { isBlockedEither } from '../safety/block.service';
+import { blockIdsFor, isBlockedEither } from '../safety/block.service';
 import { Media } from '../media/media.model';
 import { viewUrl } from '../media/media.storage';
 import { User, type UserDoc } from '../users/user.model';
-import { extractHashtags, extractMentions, MAX_HASHTAGS, MAX_MENTIONS } from './caption';
+import { extractMentions, MAX_MENTIONS } from './caption';
 import { PostLike, PostSave } from './post.engage.model';
-import { Hashtag, Post, type PostDoc } from './post.model';
+import { Post, type PostDoc } from './post.model';
 import type { CreatePostInput } from './post.schema';
 
 const MONGO_DUPLICATE_KEY = 11000;
 
 const isDuplicateKey = (err: unknown) =>
   err instanceof mongoose.mongo.MongoServerError && err.code === MONGO_DUPLICATE_KEY;
+
+/** Tagged accounts the viewer may still see (active, not blocked either way). */
+export async function taggedUsers(viewer: UserDoc, post: { tagged_ids?: mongoose.Types.ObjectId[] }) {
+  const ids = post.tagged_ids ?? [];
+  if (!ids.length) return [];
+  const hidden = new Set((await blockIdsFor(viewer._id)).map((id) => id.toHexString()));
+  const users = await User.find({ _id: { $in: ids }, status: 'active' });
+  const byId = new Map(users.map((u) => [u.id as string, u]));
+  const ordered = ids.flatMap((id) => {
+    const user = byId.get(id.toHexString());
+    return user && !hidden.has(id.toHexString()) ? [user] : [];
+  });
+  return toUserSummaries(viewer, ordered);
+}
 
 export async function toPostDto(
   viewer: UserDoc,
@@ -36,12 +50,11 @@ export async function toPostDto(
         height: m.height ?? null,
         alt_text: m.alt_text ?? '',
         duration_ms: m.duration_ms ?? null,
-        filter: m.filter || 'normal',
       })),
     ),
     caption: post.caption,
-    hashtags: post.hashtags,
     mentions: post.mentions,
+    tagged_users: await taggedUsers(viewer, post),
     location_name: post.location_name,
     location_lat: post.location_lat ?? null,
     location_lng: post.location_lng ?? null,
@@ -55,10 +68,9 @@ export async function toPostDto(
       blur: post.adjustments?.blur ?? 0,
       vignette: post.adjustments?.vignette ?? 0,
     },
-    music_title: post.music_title ?? '',
     aspect_ratio: post.aspect_ratio,
-    /** Hidden from everyone but the owner when `hide_like_count` is on. */
-    likes_count: post.hide_like_count && !isOwner ? null : post.likes_count,
+    /** Hidden from everyone, the owner included, while `hide_like_count` is on. */
+    likes_count: post.hide_like_count ? null : post.likes_count,
     comments_count: post.comments_count,
     hide_like_count: post.hide_like_count,
     comments_disabled: post.comments_disabled,
@@ -109,6 +121,28 @@ async function resolveMentions(author: UserDoc, usernames: string[]) {
   });
 }
 
+/** People who can be tagged: active, verified, and not blocked either way. */
+async function resolveTagged(author: UserDoc, ids: string[]) {
+  const unique = [...new Set(ids.map((id) => id.toLowerCase()))].filter(
+    (id) => id !== (author.id as string),
+  );
+  if (!unique.length) return [];
+  const hidden = new Set((await blockIdsFor(author._id)).map((id) => id.toHexString()));
+  const users = await User.find({ _id: { $in: unique }, status: 'active', is_verified: true })
+    .select('_id')
+    .lean();
+  const found = new Set(users.map((u) => u._id.toHexString()));
+  const valid = unique.filter((id) => found.has(id) && !hidden.has(id));
+  if (valid.length !== unique.length) {
+    throw ApiError.badRequest(
+      "Some of the people you tagged can't be tagged.",
+      { field: 'tagged_user_ids' },
+      'INVALID_TAG',
+    );
+  }
+  return valid.map((id) => new mongoose.Types.ObjectId(id));
+}
+
 async function findExisting(author: UserDoc, clientUploadId: string | undefined) {
   if (!clientUploadId) return null;
   return Post.findOne({ author_id: author._id, client_upload_id: clientUploadId });
@@ -118,14 +152,6 @@ export async function createPost(author: UserDoc, input: CreatePostInput) {
   const existing = await findExisting(author, input.client_upload_id);
   if (existing) return { post: await toPostDto(author, existing, author), created: false };
 
-  const hashtags = extractHashtags(input.caption);
-  if (hashtags.length > MAX_HASHTAGS) {
-    throw ApiError.badRequest(
-      `You can use up to ${MAX_HASHTAGS} hashtags.`,
-      { field: 'caption' },
-      'TOO_MANY_HASHTAGS',
-    );
-  }
   const mentionNames = extractMentions(input.caption).filter((n) => n !== author.username);
   if (mentionNames.length > MAX_MENTIONS) {
     throw ApiError.badRequest(
@@ -137,6 +163,7 @@ export async function createPost(author: UserDoc, input: CreatePostInput) {
 
   const media = await loadMedia(author, input.media_ids);
   const mentions = await resolveMentions(author, mentionNames);
+  const taggedIds = await resolveTagged(author, input.tagged_user_ids);
 
   let post: PostDoc;
   try {
@@ -150,17 +177,15 @@ export async function createPost(author: UserDoc, input: CreatePostInput) {
         height: m.height,
         alt_text: input.alt_texts[i] ?? '',
         duration_ms: m.duration_ms,
-        filter: input.filters?.[i] ?? 'normal',
       })),
       caption: input.caption,
-      hashtags,
       mention_ids: mentions.map((m) => m.id),
       mentions: mentions.map((m) => m.username),
+      tagged_ids: taggedIds,
       location_name: input.location_name,
       location_lat: input.location_lat ?? null,
       location_lng: input.location_lng ?? null,
       adjustments: input.adjustments ?? undefined,
-      music_title: input.music_title,
       aspect_ratio: input.aspect_ratio,
       hide_like_count: input.hide_like_count,
       comments_disabled: input.comments_disabled,
@@ -175,20 +200,7 @@ export async function createPost(author: UserDoc, input: CreatePostInput) {
     throw err;
   }
 
-  await Promise.all([
-    User.updateOne({ _id: author._id }, { $inc: { posts_count: 1 } }),
-    hashtags.length
-      ? Hashtag.bulkWrite(
-          hashtags.map((name) => ({
-            updateOne: {
-              filter: { name },
-              update: { $inc: { post_count: 1 } },
-              upsert: true,
-            },
-          })),
-        )
-      : null,
-  ]);
+  await User.updateOne({ _id: author._id }, { $inc: { posts_count: 1 } });
   return { post: await toPostDto(author, post, author), created: true };
 }
 

@@ -7,7 +7,6 @@ import {
   createPostSchema,
   cursorQuerySchema,
   postIdParamsSchema,
-  tagParamsSchema,
   updatePostSchema,
 } from './post.schema';
 import * as posts from './post.service';
@@ -36,6 +35,14 @@ export const deletePost: RequestHandler = async (req, res) => {
 
 export const likePost: RequestHandler = async (req, res) => {
   res.json(await extra.toggleLike(req.user!, idOf(req)));
+};
+
+export const likePostOn: RequestHandler = async (req, res) => {
+  res.json(await extra.setLike(req.user!, idOf(req), true));
+};
+
+export const likePostOff: RequestHandler = async (req, res) => {
+  res.json(await extra.setLike(req.user!, idOf(req), false));
 };
 
 export const savePost: RequestHandler = async (req, res) => {
@@ -71,12 +78,6 @@ export const userPosts: RequestHandler = async (req, res) => {
   const { userId } = userIdParamsSchema.parse(req.params);
   const { cursor, limit } = pageOf(req);
   res.json(await extra.postsByUser(req.user!, userId, cursor, limit));
-};
-
-export const tagPosts: RequestHandler = async (req, res) => {
-  const { tag } = tagParamsSchema.parse(req.params);
-  const { cursor, limit } = pageOf(req);
-  res.json(await extra.postsByTag(req.user!, tag, cursor, limit));
 };
 
 export const removeComment: RequestHandler = async (req, res) => {

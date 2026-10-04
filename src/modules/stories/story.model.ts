@@ -1,7 +1,6 @@
 import mongoose, { type HydratedDocument, type InferSchemaType } from 'mongoose';
 
 import { MEDIA_KINDS } from '../media/media.rules';
-import { MUSIC_MAX } from '../posts/post.model';
 
 export const STORY_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -14,12 +13,9 @@ const storySchema = new mongoose.Schema(
     width: { type: Number, default: null },
     height: { type: Number, default: null },
     duration_ms: { type: Number, default: null },
-    music_title: { type: String, default: '', maxlength: MUSIC_MAX },
     location_name: { type: String, default: '', maxlength: 100 },
     location_lat: { type: Number, default: null },
     location_lng: { type: Number, default: null },
-    /** Colour look drawn over the photo or video. `normal` is unchanged. */
-    filter: { type: String, default: 'normal' },
     /** Text, stickers, drawing and interactive stickers. Coordinates are 0–1. */
     overlays: { type: [mongoose.Schema.Types.Mixed], default: [] },
     expires_at: { type: Date, required: true },
@@ -69,3 +65,25 @@ export const Story = mongoose.model('Story', storySchema);
 export const StoryView = mongoose.model('StoryView', viewSchema);
 export const StoryPollVote = mongoose.model('StoryPollVote', pollVoteSchema);
 export const StoryQuestionReply = mongoose.model('StoryQuestionReply', questionReplySchema);
+
+const likeSchema = new mongoose.Schema(
+  {
+    story_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Story', required: true },
+    user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  },
+  { collection: 'story_likes', timestamps: { createdAt: 'created_at', updatedAt: false } as const },
+);
+likeSchema.index({ story_id: 1, user_id: 1 }, { unique: true });
+
+const messageSchema = new mongoose.Schema(
+  {
+    story_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Story', required: true },
+    sender_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    body: { type: String, required: true, maxlength: 500 },
+  },
+  { collection: 'story_messages', timestamps: { createdAt: 'created_at', updatedAt: false } as const },
+);
+messageSchema.index({ story_id: 1, _id: -1 });
+
+export const StoryLike = mongoose.model('StoryLike', likeSchema);
+export const StoryMessage = mongoose.model('StoryMessage', messageSchema);

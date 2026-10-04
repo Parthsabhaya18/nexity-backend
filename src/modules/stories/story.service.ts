@@ -7,7 +7,17 @@ import { Follow } from '../follows/follow.model';
 import { Media } from '../media/media.model';
 import { viewUrl } from '../media/media.storage';
 import { User, type UserDoc } from '../users/user.model';
-import { Story, STORY_TTL_MS, StoryPollVote, StoryQuestionReply, StoryView, type StoryDoc } from './story.model';
+import { Notification } from '../notifications/notification.model';
+import {
+  Story,
+  STORY_TTL_MS,
+  StoryLike,
+  StoryMessage,
+  StoryPollVote,
+  StoryQuestionReply,
+  StoryView,
+  type StoryDoc,
+} from './story.model';
 import type { StoryOverlay } from './story.schema';
 
 type VoteCounts = Map<string, number[]>;
@@ -46,11 +56,9 @@ async function storyMedia(story: StoryDoc, counts?: VoteCounts) {
     width: story.width,
     height: story.height,
     duration_ms: story.duration_ms,
-    music_title: story.music_title ?? '',
     location_name: story.location_name ?? '',
     location_lat: story.location_lat ?? null,
     location_lng: story.location_lng ?? null,
-    filter: story.filter || 'normal',
     overlays: withVotes((story.overlays ?? []) as StoryOverlay[], counts),
     created_at: (story.get('created_at') as Date).toISOString(),
     expires_at: story.expires_at.toISOString(),
@@ -61,11 +69,9 @@ export async function createStory(
   author: UserDoc,
   input: {
     media_id: string;
-    music_title: string;
     location_name: string;
     location_lat?: number | null;
     location_lng?: number | null;
-    filter: string;
     overlays: StoryOverlay[];
   },
 ) {
@@ -93,11 +99,9 @@ export async function createStory(
     width: media.width,
     height: media.height,
     duration_ms: media.duration_ms,
-    music_title: input.music_title,
     location_name: input.location_name,
     location_lat: input.location_lat ?? null,
     location_lng: input.location_lng ?? null,
-    filter: input.filter,
     overlays: input.overlays,
     expires_at: new Date(Date.now() + STORY_TTL_MS),
   });
@@ -127,6 +131,13 @@ export async function storyTray(viewer: UserDoc) {
     .lean();
   const seen = new Set(seenRows.map((r) => r.story_id.toHexString()));
   const counts = await voteCounts(stories);
+  const likeRows = await StoryLike.find({
+    user_id: viewer._id,
+    story_id: { $in: stories.map((s) => s._id) },
+  })
+    .select('story_id')
+    .lean();
+  const liked = new Set(likeRows.map((r) => r.story_id.toHexString()));
   const users = await User.find({ _id: { $in: authorIds } });
   const summaries = new Map((await toUserSummaries(viewer, users)).map((u) => [u.id, u]));
 
@@ -144,6 +155,7 @@ export async function storyTray(viewer: UserDoc) {
         list.map(async (s) => ({
           ...(await storyMedia(s, counts.get(s.id as string))),
           seen: seen.has(s.id as string) || s.author_id.equals(viewer._id),
+          liked_by_me: liked.has(s.id as string),
         })),
       ),
     })),
@@ -237,4 +249,43 @@ export async function storyViewers(viewer: UserDoc, storyId: string) {
       return user ? [user] : [];
     }),
   };
+}
+
+/** Sets the like on a story. Repeating the same request changes nothing. */
+export async function setStoryLike(viewer: UserDoc, storyId: string, want: boolean) {
+  const story = await visibleStory(viewer, storyId);
+  if (want) {
+    const res = await StoryLike.updateOne(
+      { story_id: story._id, user_id: viewer._id },
+      { $setOnInsert: { story_id: story._id, user_id: viewer._id } },
+      { upsert: true },
+    );
+    if (res.upsertedCount > 0 && !story.author_id.equals(viewer._id)) {
+      await Notification.create({
+        recipient_id: story.author_id,
+        actor_id: viewer._id,
+        type: 'story_like',
+        text: ` liked your story`,
+      });
+    }
+  } else {
+    await StoryLike.deleteOne({ story_id: story._id, user_id: viewer._id });
+  }
+  return { liked: want };
+}
+
+/** A private reply to a story. The owner is told in their notifications. */
+export async function messageStory(viewer: UserDoc, storyId: string, body: string) {
+  const story = await visibleStory(viewer, storyId);
+  if (story.author_id.equals(viewer._id)) {
+    throw ApiError.badRequest("You can't reply to your own story.", undefined, 'CANNOT_REPLY_SELF');
+  }
+  const message = await StoryMessage.create({ story_id: story._id, sender_id: viewer._id, body });
+  await Notification.create({
+    recipient_id: story.author_id,
+    actor_id: viewer._id,
+    type: 'story_reply',
+    text: ` replied to your story: ${body.replace(/\s+/g, ' ').trim().slice(0, 80)}`,
+  });
+  return { id: message.id as string };
 }

@@ -2,6 +2,11 @@
  * Demo accounts, profile photos, posts, reels and stories for end-to-end testing.
  * Re-running replaces only @seed.nexity.app accounts. Other users are left as they are.
  *
+ * Also fills TARGET_EMAIL (the account must already exist) with posts, reels and
+ * saved posts, mutual follows, and a story tray of the people they follow.
+ * Re-running replaces only that account's seed posts and reels
+ * (`client_upload_id` starting with `seed-account-`).
+ *
  * Usage: npm run seed
  */
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
@@ -15,13 +20,14 @@ import { KEY_FOLDERS, type MediaPurpose } from '../src/modules/media/media.rules
 import { Media } from '../src/modules/media/media.model';
 import { deleteObjects } from '../src/modules/media/media.storage';
 import { Comment, PostLike, PostSave } from '../src/modules/posts/post.engage.model';
-import { Hashtag, Post } from '../src/modules/posts/post.model';
+import { Post } from '../src/modules/posts/post.model';
 import { Reel, ReelLike } from '../src/modules/reels/reel.model';
 import { Story, StoryView } from '../src/modules/stories/story.model';
 import { GENDERS, User, type UserDoc } from '../src/modules/users/user.model';
 
 const PASSWORD = 'Test@123';
 const EMAIL_DOMAIN = 'seed.nexity.app';
+const TARGET_EMAIL = 'gohilchirag90994@gmail.com';
 const BCRYPT_COST = 12;
 
 type Gender = (typeof GENDERS)[number];
@@ -351,12 +357,93 @@ const REELS: {
   },
 ];
 
-/** Home tray: aarav has his own; anaya and meera are unseen; dev is already seen. */
+/** Home tray for anyone who follows these accounts. dev is already seen by aarav. */
 const STORIES: { author: string; picsum: number; seenBy: string[] }[] = [
   { author: 'aarav', picsum: 1067, seenBy: [] },
   { author: 'anaya', picsum: 1068, seenBy: [] },
   { author: 'meera', picsum: 1069, seenBy: [] },
   { author: 'dev', picsum: 1070, seenBy: ['aarav'] },
+  { author: 'kabir', picsum: 1062, seenBy: [] },
+  { author: 'sara', picsum: 1063, seenBy: [] },
+  { author: 'diya', picsum: 1064, seenBy: [] },
+  { author: 'om', picsum: 1065, seenBy: [] },
+  { author: 'jay', picsum: 1066, seenBy: [] },
+  { author: 'nisha', picsum: 1071, seenBy: [] },
+];
+
+/** Public seed accounts, plus private nisha, follow the target account both ways. */
+const MUTUAL_WITH_TARGET = [
+  'aarav',
+  'meera',
+  'kabir',
+  'anaya',
+  'dev',
+  'om',
+  'sara',
+  'diya',
+  'jay',
+  'nisha',
+];
+
+const ACCOUNT_POSTS: PostSeed[] = [
+  {
+    author: 'account',
+    photos: [
+      { picsum: 1074, ...PORTRAIT, alt: 'Riverfront evening' },
+      { picsum: 1076, ...PORTRAIT, alt: 'Bridge lights' },
+    ],
+    caption: 'Riverfront after work. #ahmedabad #gujarat @meera',
+    location: 'Ahmedabad',
+    aspect: 0.8,
+  },
+  {
+    author: 'account',
+    photos: [{ picsum: 1078, ...SQUARE, alt: 'Coffee cup' }],
+    caption: 'One more coffee. #ahmedabad @aarav',
+    location: 'Ahmedabad',
+    aspect: 1,
+  },
+  {
+    author: 'account',
+    photos: [{ picsum: 1080, ...PORTRAIT, alt: 'Old city lane' }],
+    caption: 'Old city, late light. #surat',
+    location: 'Surat',
+    aspect: 0.8,
+  },
+  {
+    author: 'account',
+    photos: [{ picsum: 1081, ...LANDSCAPE, alt: 'Sea road' }],
+    caption: 'Sea road on the way home. #mumbai',
+    location: 'Mumbai',
+    aspect: 1.91,
+  },
+  {
+    author: 'account',
+    photos: [{ picsum: 1082, ...SQUARE, alt: 'Studio table' }],
+    caption: 'Desk before the week starts. #photography',
+    location: '',
+    aspect: 1,
+  },
+];
+
+const ACCOUNT_REELS: {
+  url: string;
+  caption: string;
+  location: string;
+  durationMs: number;
+}[] = [
+  {
+    url: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+    caption: 'A short clip from the weekend. #ahmedabad @anaya',
+    location: 'Ahmedabad',
+    durationMs: 12_000,
+  },
+  {
+    url: 'https://download.samplelib.com/mp4/sample-5s.mp4',
+    caption: 'Five seconds by the water. #goa @kabir',
+    location: 'Goa',
+    durationMs: 5_000,
+  },
 ];
 
 /** follower -> following. Pending only lands on private accounts. */
@@ -539,18 +626,6 @@ async function recountFollows(userId: Types.ObjectId) {
   );
 }
 
-async function rebuildHashtags() {
-  const rows = await Post.aggregate<{ _id: string; post_count: number }>([
-    { $match: { deleted_at: null } },
-    { $unwind: '$hashtags' },
-    { $group: { _id: '$hashtags', post_count: { $sum: 1 } } },
-  ]);
-  await Hashtag.deleteMany({});
-  if (rows.length) {
-    await Hashtag.insertMany(rows.map((row) => ({ name: row._id, post_count: row.post_count })));
-  }
-}
-
 function mentionsIn(caption: string, author: string) {
   const names = [...caption.matchAll(/@([a-z0-9._]{3,30})/gi)].map((match) =>
     match[1]!.toLowerCase(),
@@ -558,11 +633,184 @@ function mentionsIn(caption: string, author: string) {
   return [...new Set(names.filter((name) => name !== author))];
 }
 
-function hashtagsIn(caption: string) {
-  const tags = [...caption.matchAll(/#([\p{L}\p{M}\p{N}_]+)/gu)].map((match) =>
-    match[1]!.toLowerCase(),
-  );
-  return [...new Set(tags.filter((tag) => !/^\d+$/.test(tag)))];
+async function clearAccountSeed(userId: Types.ObjectId) {
+  const [posts, reels] = await Promise.all([
+    Post.find({ author_id: userId, client_upload_id: /^seed-account-post-/ }).select('_id media'),
+    Reel.find({ author_id: userId, client_upload_id: /^seed-account-reel-/ }).select(
+      '_id video_media_id',
+    ),
+  ]);
+  const postIds = posts.map((post) => post._id);
+  const reelIds = reels.map((reel) => reel._id);
+  const mediaIds = [
+    ...posts.flatMap((post) => post.media.map((item) => item.media_id)),
+    ...reels.map((reel) => reel.video_media_id),
+  ];
+  const media = mediaIds.length ? await Media.find({ _id: { $in: mediaIds } }).select('key') : [];
+
+  await Promise.all([
+    PostLike.deleteMany({ post_id: { $in: postIds } }),
+    PostSave.deleteMany({ post_id: { $in: postIds } }),
+    Comment.deleteMany({ $or: [{ post_id: { $in: postIds } }, { reel_id: { $in: reelIds } }] }),
+    ReelLike.deleteMany({ reel_id: { $in: reelIds } }),
+    Post.deleteMany({ _id: { $in: postIds } }),
+    Reel.deleteMany({ _id: { $in: reelIds } }),
+    Media.deleteMany({ _id: { $in: mediaIds } }),
+  ]);
+  const keys = media.map((file) => file.key);
+  if (keys.length) await deleteObjects(keys);
+  if (posts.length || reels.length) {
+    console.log(`Removed previous seed posts and reels for ${TARGET_EMAIL}.`);
+  }
+}
+
+async function fillAccount(
+  account: UserDoc,
+  users: Map<string, UserDoc>,
+  postsByAuthor: Map<string, { _id: Types.ObjectId }[]>,
+) {
+  await clearAccountSeed(account._id);
+
+  const mentionUsers = (caption: string) => {
+    const names = mentionsIn(caption, account.username);
+    return names.flatMap((name) => {
+      const user = users.get(name);
+      return user ? [user] : [];
+    });
+  };
+
+  const accountPosts: { _id: Types.ObjectId }[] = [];
+  let postNumber = 0;
+  for (const seed of ACCOUNT_POSTS) {
+    postNumber += 1;
+    const media = [];
+    for (const photo of seed.photos) {
+      const file = await storeFile({
+        ownerId: account.id as string,
+        purpose: 'post',
+        url: `https://picsum.photos/id/${photo.picsum}/${photo.width}/${photo.height}.jpg`,
+        width: photo.width,
+        height: photo.height,
+      });
+      media.push({
+        media_id: file._id,
+        key: file.key,
+        kind: 'image' as const,
+        width: photo.width,
+        height: photo.height,
+        alt_text: photo.alt ?? '',
+        duration_ms: null,
+      });
+    }
+    const mentioned = mentionUsers(seed.caption);
+    const post = await Post.create({
+      author_id: account._id,
+      media,
+      caption: seed.caption,
+      mention_ids: mentioned.map((user) => user._id),
+      mentions: mentioned.map((user) => user.username),
+      location_name: seed.location,
+      aspect_ratio: seed.aspect,
+      hide_like_count: false,
+      comments_disabled: false,
+      client_upload_id: `seed-account-post-${postNumber}`,
+    });
+    accountPosts.push(post);
+    console.log(`Post ${postNumber}/${ACCOUNT_POSTS.length} by @${account.username}`);
+  }
+
+  const accountReels: { _id: Types.ObjectId }[] = [];
+  let reelNumber = 0;
+  for (const seed of ACCOUNT_REELS) {
+    reelNumber += 1;
+    const file = await storeFile({
+      ownerId: account.id as string,
+      purpose: 'reel',
+      url: seed.url,
+      width: 1280,
+      height: 720,
+      durationMs: seed.durationMs,
+    });
+    const mentioned = mentionUsers(seed.caption);
+    const reel = await Reel.create({
+      author_id: account._id,
+      video_media_id: file._id,
+      video_key: file.key,
+      width: 1280,
+      height: 720,
+      duration_ms: seed.durationMs,
+      caption: seed.caption,
+      mentions: mentioned.map((user) => user.username),
+      location_name: seed.location,
+      client_upload_id: `seed-account-reel-${reelNumber}`,
+    });
+    accountReels.push(reel);
+    console.log(`Reel ${reelNumber}/${ACCOUNT_REELS.length} by @${account.username}`);
+  }
+
+  const userOf = (username: string) => {
+    const user = users.get(username);
+    if (!user) throw new Error(`Missing seed user @${username}`);
+    return user;
+  };
+
+  await Follow.insertMany([
+    ...MUTUAL_WITH_TARGET.flatMap((name) => {
+      const other = userOf(name);
+      return [
+        { follower_id: account._id, following_id: other._id, status: 'accepted' as const },
+        { follower_id: other._id, following_id: account._id, status: 'accepted' as const },
+      ];
+    }),
+    { follower_id: account._id, following_id: userOf('riya')._id, status: 'pending' as const },
+  ]);
+
+  const saved = [
+    'meera',
+    'aarav',
+    'kabir',
+    'anaya',
+    'dev',
+    'sara',
+    'diya',
+    'jay',
+    'om',
+    'nisha',
+  ].flatMap((name) => postsByAuthor.get(name) ?? []);
+  await PostSave.insertMany(saved.map((post) => ({ user_id: account._id, post_id: post._id })));
+
+  const first = accountPosts[0];
+  const second = accountPosts[1];
+  const firstReel = accountReels[0];
+  const secondReel = accountReels[1];
+  if (!first || !second || !firstReel || !secondReel) {
+    throw new Error('Account posts were not created');
+  }
+
+  await PostLike.insertMany([
+    { user_id: userOf('meera')._id, post_id: first._id },
+    { user_id: userOf('aarav')._id, post_id: first._id },
+    { user_id: userOf('diya')._id, post_id: first._id },
+    { user_id: userOf('kabir')._id, post_id: second._id },
+    { user_id: userOf('anaya')._id, post_id: second._id },
+  ]);
+  await Post.updateOne({ _id: first._id }, { $set: { likes_count: 3, comments_count: 1 } });
+  await Post.updateOne({ _id: second._id }, { $set: { likes_count: 2, comments_count: 0 } });
+  await Comment.create({
+    post_id: first._id,
+    author_id: userOf('meera')._id,
+    body: 'Ahmedabad looks good from here.',
+  });
+
+  await ReelLike.insertMany([
+    { user_id: userOf('anaya')._id, reel_id: firstReel._id },
+    { user_id: userOf('kabir')._id, reel_id: firstReel._id },
+    { user_id: userOf('meera')._id, reel_id: secondReel._id },
+  ]);
+  await Reel.updateOne({ _id: firstReel._id }, { $set: { likes_count: 2 } });
+  await Reel.updateOne({ _id: secondReel._id }, { $set: { likes_count: 1 } });
+
+  console.log(`Saved ${saved.length} posts for @${account.username}.`);
 }
 
 async function main() {
@@ -572,6 +820,13 @@ async function main() {
 
   await connectDatabase();
   console.log(`Connected to database "${env.MONGODB_DB_NAME}".`);
+
+  const account = await User.findOne({ email: TARGET_EMAIL });
+  if (!account) {
+    throw new Error(
+      `Sign up and log in once as ${TARGET_EMAIL}, then run npm run seed again.`,
+    );
+  }
 
   const usernames = PEOPLE.map((p) => p.username);
   const taken = await User.find({
@@ -657,7 +912,6 @@ async function main() {
       author_id: author._id,
       media,
       caption: seed.caption,
-      hashtags: hashtagsIn(seed.caption),
       mention_ids: mentionUsers.map((u) => u._id),
       mentions: mentionUsers.map((u) => u.username),
       location_name: seed.location,
@@ -692,7 +946,6 @@ async function main() {
       height: 720,
       duration_ms: seed.durationMs,
       caption: seed.caption,
-      hashtags: hashtagsIn(seed.caption),
       mentions: names,
       location_name: seed.location,
       client_upload_id: `seed-${seed.author}-reel`,
@@ -795,16 +1048,25 @@ async function main() {
   await Post.updateOne({ _id: aaravFirst._id }, { $set: { likes_count: 2, comments_count: 1 } });
   await Post.updateOne({ _id: kabirPost._id }, { $set: { likes_count: 1, comments_count: 0 } });
 
-  await Promise.all([...users.values()].map((user) => recountFollows(user._id)));
-  await rebuildHashtags();
+  await fillAccount(account, users, postsByAuthor);
+  await Promise.all([
+    ...[...users.values()].map((user) => recountFollows(user._id)),
+    recountFollows(account._id),
+  ]);
 
   console.log('');
-  console.log('Seed ready. Password for every account: Test@123');
+  console.log(`Filled ${TARGET_EMAIL} (@${account.username})`);
+  console.log('  posts, reels and saved posts');
+  console.log('  mutual follows with the public seed accounts and nisha');
+  console.log('  story tray shows the people they follow');
+  console.log('  follow request still pending for private @riya');
+  console.log('');
+  console.log('Seed ready. Password for every demo account: Test@123');
   console.log('Log in with the username or the email.');
   console.log('');
   console.log('  aarav   public   home feed, stories, saved posts, dark theme');
-  console.log('  riya    private  follow requests waiting (kabir, anaya, dev, om, aarav)');
-  console.log('  nisha   private  aarav already follows her, so her posts show on his feed');
+  console.log('  riya    private  follow requests waiting, including the filled account');
+  console.log('  nisha   private  accepted follows, so her story and posts are visible');
   console.log('  meera   public   carousel post, profile photo, website');
   console.log('  kabir   public   reel + landscape post');
   console.log('  anaya   public   unseen story + reel');

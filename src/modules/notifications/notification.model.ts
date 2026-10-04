@@ -1,6 +1,6 @@
 import mongoose, { type HydratedDocument, type InferSchemaType } from 'mongoose';
 
-export const NOTIFICATION_TYPES = ['comment_post', 'comment_reel'] as const;
+export const NOTIFICATION_TYPES = ['comment_post', 'comment_reel', 'story_like', 'story_reply'] as const;
 
 const notificationSchema = new mongoose.Schema(
   {

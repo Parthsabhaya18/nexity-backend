@@ -164,10 +164,10 @@ describe('POST /media/uploads', () => {
       purpose: 'reel',
       content_type: 'video/mp4',
       bytes: 900 * 1024 * 1024,
-      duration_ms: 3 * 60 * 1000 + 400,
+      duration_ms: 2 * 60 * 1000 + 400,
     });
     expect(reel.status).toBe(201);
-    expect(reel.body.media.duration_ms).toBe(3 * 60 * 1000 + 400);
+    expect(reel.body.media.duration_ms).toBe(2 * 60 * 1000 + 400);
 
     const chatVideo = await startUpload(auth, {
       purpose: 'message',
@@ -211,9 +211,9 @@ describe('POST /media/uploads', () => {
 
   it('rejects videos longer than Instagram allows for each purpose', async () => {
     const cases = [
-      { purpose: 'reel', duration_ms: 3 * 60 * 1000 + 2000, max: 180_000, text: '3 minutes' },
-      { purpose: 'story', duration_ms: 61_500, max: 60_000, text: '60 seconds' },
-      { purpose: 'post', duration_ms: 90_000, max: 60_000, text: '60 seconds' },
+      { purpose: 'reel', duration_ms: 2 * 60 * 1000 + 2000, max: 120_000, text: '2 minutes' },
+      { purpose: 'story', duration_ms: 122_500, max: 120_000, text: '2 minutes' },
+      { purpose: 'post', duration_ms: 150_000, max: 120_000, text: '2 minutes' },
     ];
     for (const c of cases) {
       const res = await startUpload(auth, {
@@ -317,7 +317,7 @@ describe('multipart uploads (large files)', () => {
   const BIG = 40 * MB + 123;
 
   const startBig = (bytes = BIG) =>
-    startUpload(auth, { purpose: 'reel', content_type: 'video/mp4', bytes, duration_ms: 170_000 });
+    startUpload(auth, { purpose: 'reel', content_type: 'video/mp4', bytes, duration_ms: 110_000 });
 
   const partUrls = (id: string, partNumbers: number[], as = auth) =>
     request(app)

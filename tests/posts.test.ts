@@ -16,8 +16,8 @@ import { OtpCode } from '../src/modules/auth/otpCode.model';
 import { RefreshToken } from '../src/modules/auth/refreshToken.model';
 import { Follow } from '../src/modules/follows/follow.model';
 import { Media } from '../src/modules/media/media.model';
-import { extractHashtags, extractMentions } from '../src/modules/posts/caption';
-import { Hashtag, Post } from '../src/modules/posts/post.model';
+import { extractMentions } from '../src/modules/posts/caption';
+import { Post } from '../src/modules/posts/post.model';
 import { User } from '../src/modules/users/user.model';
 
 let mongo: MongoMemoryServer;
@@ -89,7 +89,6 @@ beforeAll(async () => {
     Follow.init(),
     Media.init(),
     Post.init(),
-    Hashtag.init(),
   ]);
 }, 120_000);
 
@@ -100,7 +99,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await Promise.all(
-    [User, OtpCode, RefreshToken, Follow, Media, Post, Hashtag].map((m) =>
+    [User, OtpCode, RefreshToken, Follow, Media, Post].map((m) =>
       (m as mongoose.Model<unknown>).deleteMany({}),
     ),
   );
@@ -109,12 +108,7 @@ beforeEach(async () => {
 });
 
 describe('caption parsing', () => {
-  it('finds hashtags and mentions like Instagram', () => {
-    expect(extractHashtags('Sunset #Travel #travel #goa2026 #123 a#b #ગુજરાત')).toEqual([
-      'travel',
-      'goa2026',
-      'ગુજરાત',
-    ]);
+  it('finds mentions like Instagram', () => {
     expect(extractMentions('with @Bob.Smith. and @al, me@mail.com @alice')).toEqual([
       'bob.smith',
       'alice',
@@ -127,28 +121,21 @@ describe('POST /posts', () => {
     const ids = [await readyMedia(alice), await readyMedia(alice), await readyMedia(alice)];
     const res = await api(alice).post('/posts', {
       media_ids: ids,
-      caption: '  Sunset with @bob.smith and @nobody_here #Travel #goa  ',
+      caption: '  Sunset with @bob.smith and @nobody_here and more  ',
       alt_texts: ['Beach', '', 'Friends'],
       location_name: 'Goa, India',
       aspect_ratio: 0.8,
-      filters: ['clarendon', 'normal', 'moon'],
       client_upload_id: 'upload-123456',
     });
     expect(res.status).toBe(201);
     expect(res.body.media.map((m: { id: string }) => m.id)).toEqual(ids);
-    expect(res.body.media.map((m: { filter: string }) => m.filter)).toEqual([
-      'clarendon',
-      'normal',
-      'moon',
-    ]);
     expect(res.body.media[0]).toMatchObject({
       kind: 'image',
       alt_text: 'Beach',
       url: expect.stringContaining('https://cdn.test/posts/'),
     });
     expect(res.body).toMatchObject({
-      caption: 'Sunset with @bob.smith and @nobody_here #Travel #goa',
-      hashtags: ['travel', 'goa'],
+      caption: 'Sunset with @bob.smith and @nobody_here and more',
       mentions: ['bob.smith'],
       location_name: 'Goa, India',
       aspect_ratio: 0.8,
@@ -159,7 +146,6 @@ describe('POST /posts', () => {
 
     const me = await api(alice).get('/users/me');
     expect(me.body.posts_count).toBe(1);
-    expect(await Hashtag.findOne({ name: 'travel' }).lean()).toMatchObject({ post_count: 1 });
   });
 
   it('is idempotent with client_upload_id', async () => {
@@ -205,7 +191,7 @@ describe('POST /posts', () => {
       { media_ids: [id, id] },
       { media_ids: [id], caption: 'x'.repeat(2201) },
       { media_ids: [id], aspect_ratio: 3 },
-      { media_ids: [id], caption: Array.from({ length: 31 }, (_, i) => `#t${i}`).join(' ') },
+      { media_ids: [id], tagged_user_ids: ['not-an-id'] },
     ];
     for (const body of bad) {
       expect((await api(alice).post('/posts', body)).status).toBe(400);
@@ -232,33 +218,29 @@ describe('GET /posts/:id', () => {
 
     const visible = await api(bob).get(path);
     expect(visible.status).toBe(200);
-    expect(visible.body).toMatchObject({ is_owner: false, likes_count: null });
-    expect((await api(alice).get(path)).body.likes_count).toBe(0);
+    expect(visible.body).toMatchObject({ is_owner: false, likes_count: null, hide_like_count: true });
+    // The owner sees the same hidden count: the setting hides it everywhere.
+    expect((await api(alice).get(path)).body.likes_count).toBeNull();
     expect(
       (await api(bob).get(`/posts/${new mongoose.Types.ObjectId().toHexString()}`)).status,
     ).toBe(404);
   });
 });
 
-describe('search tags and places', () => {
-  it('suggests hashtags and public locations', async () => {
+describe('search places', () => {
+  it('suggests public locations', async () => {
     await api(alice).post('/posts', {
       media_ids: [await readyMedia(alice)],
-      caption: '#travel #travelgram',
+      caption: 'travel',
       location_name: 'Goa, India',
     });
     await api(bob).patch('/users/me', { is_private: true });
     await api(bob).post('/posts', {
       media_ids: [await readyMedia(bob)],
-      caption: '#travel',
+      caption: 'travel',
       location_name: 'Secret Beach',
     });
 
-    const tags = await api(alice).get('/search?type=tags&q=%23trav');
-    expect(tags.body.tags).toEqual([
-      { name: 'travel', post_count: 2 },
-      { name: 'travelgram', post_count: 1 },
-    ]);
     const places = await api(alice).get('/search?type=places&q=goa');
     expect(places.body.places[0]).toEqual({ name: 'Goa, India', post_count: 1 });
     expect(places.body.places).toContainEqual({ name: 'Goa', post_count: 0 });

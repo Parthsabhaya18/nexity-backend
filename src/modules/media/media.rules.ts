@@ -38,6 +38,8 @@ type KindRule = {
 };
 
 const SECOND = 1000;
+/** Longest post, reel or story video. Mirrored in the app's mediaRules.ts. */
+export const VIDEO_MAX_MS = 120 * SECOND;
 /** Device metadata rounds durations, so a 3:00 reel may report 3:00.4. */
 export const DURATION_TOLERANCE_MS = SECOND;
 
@@ -50,10 +52,10 @@ const video = (maxDurationMs: number | null): KindRule => ({ maxBytes: 4 * GB, m
 
 export const MEDIA_RULES: Record<MediaPurpose, Partial<Record<MediaKind, KindRule>>> = {
   avatar: { image: { maxBytes: 20 * MB } },
-  /** Carousel videos; anything longer is shared as a reel. */
-  post: { image: IMAGE, video: video(60 * SECOND) },
-  reel: { video: video(3 * 60 * SECOND) },
-  story: { image: IMAGE, video: video(60 * SECOND) },
+  /** Posts, reels and stories all stop at two minutes. */
+  post: { image: IMAGE, video: video(VIDEO_MAX_MS) },
+  reel: { video: video(VIDEO_MAX_MS) },
+  story: { image: IMAGE, video: video(VIDEO_MAX_MS) },
   message: { image: IMAGE, video: video(null) },
 };
 

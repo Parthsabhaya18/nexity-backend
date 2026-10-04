@@ -17,7 +17,7 @@ import { RefreshToken } from '../src/modules/auth/refreshToken.model';
 import { Follow } from '../src/modules/follows/follow.model';
 import { Media } from '../src/modules/media/media.model';
 import { Comment, PostLike, PostSave } from '../src/modules/posts/post.engage.model';
-import { Hashtag, Post } from '../src/modules/posts/post.model';
+import { Post } from '../src/modules/posts/post.model';
 import { Reel, ReelLike } from '../src/modules/reels/reel.model';
 import { Story, StoryPollVote, StoryQuestionReply, StoryView } from '../src/modules/stories/story.model';
 import { User } from '../src/modules/users/user.model';
@@ -82,7 +82,7 @@ beforeAll(async () => {
   mongo = await MongoMemoryServer.create();
   await connectDatabase(mongo.getUri());
   await Promise.all(
-    [User, OtpCode, RefreshToken, Follow, Media, Post, Hashtag, PostLike, PostSave, Comment, Story, StoryView, StoryPollVote, StoryQuestionReply, Reel, ReelLike].map(
+    [User, OtpCode, RefreshToken, Follow, Media, Post, PostLike, PostSave, Comment, Story, StoryView, StoryPollVote, StoryQuestionReply, Reel, ReelLike].map(
       (m) => m.init(),
     ),
   );
@@ -95,7 +95,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await Promise.all(
-    [User, OtpCode, RefreshToken, Follow, Media, Post, Hashtag, PostLike, PostSave, Comment, Story, StoryView, StoryPollVote, StoryQuestionReply, Reel, ReelLike].map(
+    [User, OtpCode, RefreshToken, Follow, Media, Post, PostLike, PostSave, Comment, Story, StoryView, StoryPollVote, StoryQuestionReply, Reel, ReelLike].map(
       (m) => (m as mongoose.Model<unknown>).deleteMany({}),
     ),
   );
@@ -152,8 +152,8 @@ describe('feed, likes, saves, comments', () => {
       caption: '#one',
     });
     const id = created.body.id as string;
-    const edited = await api(alice).patch(`/posts/${id}`, { caption: '#two', location_name: 'Goa' });
-    expect(edited.body).toMatchObject({ caption: '#two', location_name: 'Goa', hashtags: ['two'] });
+    const edited = await api(alice).patch(`/posts/${id}`, { caption: 'two', location_name: 'Goa' });
+    expect(edited.body).toMatchObject({ caption: 'two', location_name: 'Goa' });
     expect((await api(alice).del(`/posts/${id}`)).status).toBe(204);
     expect((await api(alice).get(`/posts/${id}`)).status).toBe(404);
     expect((await api(alice).get('/users/me')).body.posts_count).toBe(0);
@@ -169,7 +169,7 @@ describe('stories and reels', () => {
   it('publishes a story for followers and marks it seen', async () => {
     const created = await api(alice).post('/stories', { media_id: await media(alice, 'story') });
     expect(created.status).toBe(201);
-    expect(created.body.filter).toBe('normal');
+    expect(created.body.liked_by_me).toBeUndefined();
     expect((await api(bob).get('/stories/tray')).body.items).toEqual([]);
     await api(bob).post(`/users/${alice.id}/follow`);
     const tray = await api(bob).get('/stories/tray');
@@ -249,8 +249,6 @@ describe('stories and reels', () => {
     });
     expect(created.status).toBe(201);
     expect(created.body).toMatchObject({
-      hashtags: ['reels'],
-      filter: 'normal',
       location_name: 'Ahmedabad',
       location_lat: null,
       duration_ms: 8000,
