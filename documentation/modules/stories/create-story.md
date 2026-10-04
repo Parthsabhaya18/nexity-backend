@@ -1,11 +1,11 @@
 # Create story
 
-**Screen:** `CreateStory` (fullscreen modal; opens straight into the camera)  
+**Screen:** `CreateStory` (fullscreen; opens on the in-app camera, like the prototype)  
 **Deep link:** `nexity://create/story`  
 **Theme:** Always dark (camera + story editor) — [THEMING.md](../../architecture/THEMING.md)  
 **Auth required:** Yes  
 **UX reference:** [INSTAGRAM_CONTENT_UX.md](../../architecture/INSTAGRAM_CONTENT_UX.md) — Stories  
-**Media:** [CLOUDINARY.md](../../architecture/CLOUDINARY.md) · **Platform:** [MOBILE_APP.md](../../architecture/MOBILE_APP.md#media-capture-pick-play)
+**Media:** [MEDIA_STORAGE.md](../../architecture/MEDIA_STORAGE.md) · **Platform:** [MOBILE_APP.md](../../architecture/MOBILE_APP.md#media-capture-pick-play)
 
 ## Purpose
 
@@ -13,16 +13,18 @@ Instagram-style story: capture or upload one image/video, optional simple overla
 
 Opened from the **Create (+)** sheet → **Story**, or the **Your story** "+" in the tray.
 
+The screen opens on the live camera with a strip of recent photos and videos and a gallery button. Share can include one song name (`music_title`), a place (`location_name` plus `location_lat` / `location_lng` when the map search returns coordinates), a colour look (`filter`, default `normal`), and up to 12 overlays. Text and mention stickers can be dragged. Overlays are text, emoji stickers, drawing, poll, question, quiz, countdown, link, hashtag and mention. They are stored with the story and drawn again for every viewer. They are not burned into the image file. A poll vote is `POST /stories/:id/vote`. A question answer is `POST /stories/:id/reply`. It disappears after 24 hours.
+
 ## UI
 
 1. **Camera** (`react-native-vision-camera`) — tap shutter for photo, **hold** to record video (max 60 s, progress ring), flip camera (double-tap the preview also flips), flash toggle. Bottom-left thumbnail opens the gallery (last 24h items first).
-   - Permissions: camera on open; microphone when recording starts; photos when the gallery is opened. Denied → dark explainer with **Open Settings**; gallery still usable if camera is denied.
+   - Permissions: the phone’s own dialogs on open — camera, then microphone, then photos for the strip. Denied once → **Try again** (shows the dialog again). Denied permanently → **Open Settings**, which opens the Camera switch. Gallery still usable if camera is denied.
 2. **Editor** — fullscreen preview; tools: Text, Stickers, Draw (Phase 2 OK to stub); **Discard** (✕ with confirm) / **Your story** (share).
 3. No multi-slide story album required in v3 (one asset per publish action; user can post again for the next segment).
 
 Constraints:
 
-- Image or video; video max **60 seconds / 50 MB** (checked on device).
+- Image or video, up to 10 at once; video max **60 seconds** (checked on device and by the API). Size is never a limit; the device compresses first.
 - Upload via Cloudinary sign → upload → confirm (`purpose: "story"`).
 - Status bar hidden; controls respect top/bottom safe areas.
 - Android back: editor → camera → close.

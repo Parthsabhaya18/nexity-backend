@@ -2,7 +2,7 @@
 
 Posts, Reels, and Stories must **look and behave like Instagram** for create, view, edit, and delete. Implementation details differ by type; shared patterns are defined here.
 
-**Media:** all assets via [CLOUDINARY.md](CLOUDINARY.md).
+**Media:** all assets via [MEDIA_STORAGE.md](MEDIA_STORAGE.md) (AWS S3).
 
 ## Shared patterns (all three types)
 
@@ -79,7 +79,7 @@ Confirm dialog → soft delete → remove from feed/profile grid; purge Cloudina
 
 **Screens:** `CreateReelStack` (fullscreen modal) → `CreateReelVideo` → `CreateReelEdit` → `CreateReelDetails`. Deep link `nexity://create/reel`.
 
-Max length **90 seconds** (IG allows up to 90s for many accounts).
+Max length **3 minutes**, like Instagram.
 
 ### View (match Instagram Reels)
 
@@ -144,9 +144,10 @@ Instagram **does not** edit published stories. Match that:
 |-----------|----------|
 | Home tab | `HomeTab` → `Home` (stories tray + feed) |
 | Search & explore tab | `SearchTab` → `Explore` |
-| Create (+) tab | `CreateTab` → sheet: Post / Reel / Story |
+| Create (+) tab | Round + button right of the tab pill → sheet: Post / Reel / Story |
+| — | `PremiumTab` → `Premium` (between Search and Reels) |
 | Reels tab | `ReelsTab` → `Reels` (dark tab bar) |
-| Profile tab | `ProfileTab` → `MyProfile` (tabs Posts / Reels / Tagged) |
+| Profile tab | No tab — avatar in Home header → `MyProfile` (tabs Posts / Reels / Tagged) |
 | Heart / Messenger icons in Home header | `Notifications`, `Inbox` |
 | Story ring | tray → `StoryViewer` |
 

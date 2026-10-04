@@ -34,3 +34,24 @@ export const loginLimiter = limiter(20, (req) => {
 });
 
 export const authLimiter = limiter(60, ip);
+
+const account = (req: Request) => (req.user ? `user:${req.user.id as string}` : ip(req));
+
+/** Runs after requireAuth, so uploads are limited per account. */
+export const mediaUploadLimiter = limiter(150, account);
+
+export const profileUpdateLimiter = limiter(60, account);
+
+/** Follow, unfollow and request actions; stops follow-spam bots. */
+export const followLimiter = limiter(200, account);
+
+/** Content reports. A duplicate of the same target is stored once. */
+export const reportLimiter = limiter(40, account);
+
+export const searchLimiter = limiter(300, account);
+
+/** Retries reuse `client_upload_id`, so this only stops spam. */
+export const postCreateLimiter = limiter(60, account);
+
+/** A 4 GB video needs ~30 part-URL batches, plus refreshes on slow networks. */
+export const mediaPartsLimiter = limiter(600, account);

@@ -106,6 +106,6 @@ export const usernameAvailable: RequestHandler = async (req, res) => {
   res.json(await auth.isUsernameAvailable(username));
 };
 
-export const me: RequestHandler = (req, res) => {
-  res.json(toMeDto(req.user!));
+export const me: RequestHandler = async (req, res) => {
+  res.json(await toMeDto(req.user!));
 };

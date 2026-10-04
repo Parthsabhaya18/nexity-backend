@@ -64,6 +64,10 @@ Show a scrollable timeline of posts from followed users and recommended content.
 - Hide posts from blocked users.
 - Soft-deleted posts never appear.
 
+## Implementation status
+
+`GET /feed` returns `{ items: Post[], next_cursor }` for the viewer and accepted follows, newest first. Each post includes `liked_by_me`, `saved_by_me`, carousel `media` and `aspect_ratio`. Like and save are `POST /posts/:id/like` and `/save` (toggles). The Home screen shows the stories tray, a posting bar, pull-to-refresh and infinite scroll. Suggested posts and an offline cache are not built.
+
 ## Acceptance criteria
 
 - [ ] Smooth 60 fps scrolling on a mid-range Android phone (FlashList, cached images, no inline functions in item render).

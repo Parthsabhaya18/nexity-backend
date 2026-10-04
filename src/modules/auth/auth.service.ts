@@ -28,11 +28,11 @@ const invalidCredentials = () =>
   ApiError.unauthorized('Incorrect email, username or password.', 'INVALID_CREDENTIALS');
 
 /** An unverified sign-up only reserves its username for 24 hours. */
-const isStaleUnverified = (user: UserDoc) =>
+export const isStaleUnverified = (user: UserDoc) =>
   !user.is_verified && Date.now() - (user.get('updated_at') as Date).getTime() > UNVERIFIED_HOLD_MS;
 
 async function session(user: UserDoc, device: DeviceInfo) {
-  return { ...(await issueTokenPair(user.id as string, device)), user: toMeDto(user) };
+  return { ...(await issueTokenPair(user.id as string, device)), user: await toMeDto(user) };
 }
 
 export async function register(input: z.infer<typeof registerSchema>) {

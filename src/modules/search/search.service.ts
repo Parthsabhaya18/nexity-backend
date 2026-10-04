@@ -1,0 +1,129 @@
+import { escapeRegex, userSearchFilter } from '../../utils/regex';
+import { Follow } from '../follows/follow.model';
+import { toUserSummaries } from '../follows/follow.service';
+import { blockIdsFor } from '../safety/block.service';
+import { Hashtag, Post } from '../posts/post.model';
+import { User, type UserDoc } from '../users/user.model';
+import { lookUpPlaces } from './placeLookup';
+
+/** Most-followed matches first; an exact username always leads. */
+export async function searchUsers(viewer: UserDoc, rawQuery: string, limit: number) {
+  const term = rawQuery.trim().replace(/^@/, '');
+  if (!term) return [];
+  const hidden = await blockIdsFor(viewer._id);
+  const users = await User.find({
+    _id: { $ne: viewer._id, $nin: hidden },
+    is_verified: true,
+    status: 'active',
+    ...userSearchFilter(term),
+  })
+    .sort({ followers_count: -1, _id: 1 })
+    .limit(limit);
+  const exact = term.toLowerCase();
+  users.sort((a, b) => Number(b.username === exact) - Number(a.username === exact));
+  return toUserSummaries(viewer, users);
+}
+
+/** People to discover when the search box is empty. Already-followed accounts stay out. */
+export async function suggestUsers(viewer: UserDoc, limit: number) {
+  const [hidden, following] = await Promise.all([
+    blockIdsFor(viewer._id),
+    Follow.find({ follower_id: viewer._id, status: 'accepted' }).select('following_id').lean(),
+  ]);
+  const users = await User.find({
+    _id: {
+      $nin: [viewer._id, ...hidden, ...following.map((row) => row.following_id)],
+    },
+    is_verified: true,
+    status: 'active',
+  })
+    .sort({ followers_count: -1, username: 1 })
+    .limit(limit);
+  return toUserSummaries(viewer, users);
+}
+
+/** Hashtags starting with the query, most used first. */
+export async function searchTags(rawQuery: string, limit: number) {
+  const term = rawQuery.trim().replace(/^#/, '').toLowerCase();
+  if (!term) return [];
+  const tags = await Hashtag.find({
+    name: new RegExp(`^${escapeRegex(term)}`),
+    post_count: { $gt: 0 },
+  })
+    .sort({ post_count: -1, name: 1 })
+    .limit(limit)
+    .lean();
+  return tags.map((t) => ({ name: t.name, post_count: t.post_count }));
+}
+
+/** Big places offered even when the map search is down. */
+const PLACE_CATALOG = [
+  'Ahmedabad',
+  'Surat',
+  'Vadodara',
+  'Rajkot',
+  'Gandhinagar',
+  'Mumbai',
+  'Delhi',
+  'Goa',
+  'Jaipur',
+  'Udaipur',
+  'Bengaluru',
+  'Hyderabad',
+  'Chennai',
+  'Kolkata',
+  'Pune',
+  'Dubai',
+  'London',
+  'New York',
+  'Singapore',
+];
+
+/**
+ * Places used on posts first (only public accounts and the viewer's own, so a
+ * private account's places never leak), then the catalog, then any real place
+ * from OpenStreetMap with its coordinates.
+ */
+export async function searchPlaces(viewer: UserDoc, rawQuery: string, limit: number) {
+  const term = rawQuery.trim();
+  if (!term) return [];
+  const rows = await Post.aggregate<{ _id: string; post_count: number }>([
+    { $match: { location_name: new RegExp(`(^|\\s)${escapeRegex(term)}`, 'i') } },
+    { $sort: { _id: -1 } },
+    { $limit: 2000 },
+    { $lookup: { from: 'users', localField: 'author_id', foreignField: '_id', as: 'author' } },
+    { $match: { $or: [{ 'author.is_private': false }, { author_id: viewer._id }] } },
+    { $group: { _id: '$location_name', post_count: { $sum: 1 } } },
+    { $sort: { post_count: -1, _id: 1 } },
+    { $limit: limit },
+  ]);
+  const used: PlaceResult[] = rows.map((r) => ({ name: r._id, post_count: r.post_count }));
+  const needle = term.toLowerCase();
+  const catalog: PlaceResult[] = PLACE_CATALOG.filter((name) =>
+    name.toLowerCase().includes(needle),
+  ).map((name) => ({ name, post_count: 0 }));
+  const world: PlaceResult[] = (await lookUpPlaces(term, limit)).map((p) => ({
+    name: p.area ? `${p.name}, ${p.area}` : p.name,
+    post_count: 0,
+    area: p.area,
+    latitude: p.latitude,
+    longitude: p.longitude,
+  }));
+  const seen = new Set<string>();
+  return [...used, ...catalog, ...world]
+    .filter((p) => {
+      const key = p.name.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, limit);
+}
+
+type PlaceResult = {
+  name: string;
+  post_count: number;
+  area?: string;
+  latitude?: number;
+  longitude?: number;
+};

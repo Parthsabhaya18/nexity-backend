@@ -51,9 +51,24 @@ const envSchema = z
       .enum(['true', 'false'])
       .default('true')
       .transform((v) => v === 'true'),
-    KEEP_ALIVE_INTERVAL_MS: z.coerce.number().int().positive().default(10 * 60 * 1000),
+    KEEP_ALIVE_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(10 * 60 * 1000),
     RENDER_EXTERNAL_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
     APP_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
+
+    AWS_REGION: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+    // Optional: without keys the SDK default chain is used (IAM role, ~/.aws, etc.).
+    AWS_ACCESS_KEY_ID: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+    AWS_SECRET_ACCESS_KEY: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+    S3_BUCKET: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+    // S3-compatible endpoint (MinIO, LocalStack). Leave empty for AWS.
+    S3_ENDPOINT: z.preprocess(emptyToUndefined, z.string().url().optional()),
+    // CloudFront (or bucket) origin that serves uploaded files, without a trailing slash.
+    MEDIA_PUBLIC_BASE_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
+    MEDIA_UPLOAD_URL_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(900),
   })
   .superRefine((cfg, ctx) => {
     // Tests spin up their own in-memory MongoDB, so the URI is only mandatory outside `test`.
@@ -74,6 +89,24 @@ const envSchema = z
         message: 'SMTP_HOST is required in production so OTP emails can be sent',
       });
     }
+    if (cfg.NODE_ENV === 'production') {
+      for (const key of ['AWS_REGION', 'S3_BUCKET'] as const) {
+        if (!cfg[key]) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [key],
+            message: `${key} is required in production for media uploads`,
+          });
+        }
+      }
+    }
+    if (Boolean(cfg.AWS_ACCESS_KEY_ID) !== Boolean(cfg.AWS_SECRET_ACCESS_KEY)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['AWS_SECRET_ACCESS_KEY'],
+        message: 'Set both AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, or neither',
+      });
+    }
   });
 
 const parsed = envSchema.safeParse(process.env);
@@ -91,6 +124,8 @@ export const jwtAccessSecret =
   env.JWT_ACCESS_SECRET ?? 'nexity-development-only-secret-change-me-0000';
 
 export const isMailConfigured = env.NODE_ENV !== 'test' && Boolean(env.SMTP_HOST);
+
+export const isMediaConfigured = Boolean(env.AWS_REGION && env.S3_BUCKET);
 
 /** Without SMTP outside production, OTP codes are returned in API responses so the app can be tested. */
 export const exposeDevOtp = !isProduction && !isMailConfigured;

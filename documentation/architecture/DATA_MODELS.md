@@ -11,9 +11,12 @@ Physical schema may differ; fields and relationships must remain equivalent.
 | password_hash | string | |
 | username | string | unique, public |
 | display_name | string | |
-| bio | text | max 500 |
-| avatar_url | string | nullable |
+| bio | text | max 150 (Instagram) |
+| website | string | max 200, full `http(s)` URL or empty |
+| avatar_media_id | ObjectId → Media | nullable; old avatar is deleted from S3 when replaced |
+| avatar_key | string | nullable; S3 key of the avatar. APIs return `avatar_url` built from it per response (CDN or presigned URL) |
 | is_private | boolean | default false |
+| posts_count / followers_count / following_count | int | default 0, denormalised; kept in sync by the post and follow modules |
 | is_verified | boolean | email verified |
 | role | enum | `user`, `moderator`, `admin` |
 | theme_preference | enum | `system` (default), `light`, `dark` — see [THEMING.md](THEMING.md) |
@@ -32,26 +35,28 @@ Physical schema may differ; fields and relationships must remain equivalent.
 
 Unique: `(follower_id, following_id)`.
 
-## MediaAsset (Cloudinary)
+> Implementation note: stored in the `follows` collection with ObjectId ids (exposed as 24-char hex strings). Also indexed on `(following_id, status, _id)` and `(follower_id, status, _id)` for the lists. Accepting a request or following a public account increments `User.followers_count` / `following_count`; unfollowing or removing an accepted follower decrements them (never below 0).
 
-Stored in DB after `POST /media/confirm`.
+## MediaAsset (S3) — collection `media_assets`
+
+Created as `pending` by `POST /media/uploads`, becomes `ready` after `POST /media/:id/complete`. See [MEDIA_STORAGE.md](MEDIA_STORAGE.md).
 
 | Field | Type |
 |-------|------|
-| id | UUID |
-| owner_id | UUID |
-| public_id | string |
-| resource_type | `image` \| `video` |
-| secure_url | string |
-| bytes | int |
-| width, height | int |
-| duration_ms | int, nullable |
-| format | string |
+| id | ObjectId (string in APIs) |
+| owner_id | ObjectId → User |
 | purpose | `post` \| `reel` \| `story` \| `avatar` \| `message` |
-| status | `processing` \| `ready` \| `failed` |
-| created_at | datetime |
+| kind | `image` \| `video` |
+| key | string, unique — S3 object key |
+| content_type | string |
+| bytes | int — declared while pending, actual once ready |
+| width, height | int, nullable |
+| duration_ms | int, nullable (videos) |
+| status | `pending` \| `ready` |
+| upload_expires_at | datetime — pending rows past this (+10 min) are purged |
+| created_at, updated_at | datetime |
 
-Delivery URLs with transforms are computed at read time, not stored as canonical.
+The public `url` is computed at read time from `MEDIA_PUBLIC_BASE_URL` + `key`, not stored.
 
 ## Post
 
@@ -69,6 +74,8 @@ Delivery URLs with transforms are computed at read time, not stored as canonical
 | is_edited | boolean |
 | is_deleted | boolean |
 | created_at, updated_at | datetime |
+
+> Implementation note (collection `posts`, ObjectId ids): `media` is an embedded ordered array `{ media_id, key, kind, width, height, alt_text }` (alt text max 100). Also stored: `hashtags` (lowercase, max 30), `mention_ids` + `mentions` (usernames that existed when shared, max 20), `aspect_ratio` (width / height of the carousel frame, 0.8–1.91), `location_lat` / `location_lng` (nullable), `adjustments` (brightness, contrast, saturation, warmth, fade, sharpen, blur, vignette), `likes_count`, `comments_count`, `client_upload_id` (unique per author when set). There is no `visibility` field yet: a post follows its author's account privacy. `tagged_user_ids`, `is_edited` and soft delete arrive with edit/delete. Media used by a post can't be deleted through `DELETE /media/:id` (`409 MEDIA_IN_USE`). `User.posts_count` is incremented on create.
 
 ## PostLike, PostSave, Comment
 
@@ -95,6 +102,8 @@ Delivery URLs with transforms are computed at read time, not stored as canonical
 | is_edited | boolean |
 | created_at | datetime |
 
+> Implementation: also `music_title`, `location_lat` / `location_lng`, `audio_muted`, `cover_time_ms`, and `cover_key` (optional uploaded cover photo). Trim is a playback window, not a re-encoded file.
+
 ## Story
 
 | Field | Type |
@@ -107,6 +116,8 @@ Delivery URLs with transforms are computed at read time, not stored as canonical
 | view_count | int |
 
 No `is_edited` — stories are not editable after publish (Instagram parity).
+
+> Implementation: also `music_title`, `location_name`, `location_lat` / `location_lng`, and `overlays` (up to 12: text, sticker, draw, poll, question, quiz, countdown, link, hashtag, mention). Overlays are drawn in the viewer; they are not baked into the media file. Poll votes live in `story_poll_votes`. Question answers live in `story_question_replies`.
 
 ## Conversation, Message
 
@@ -186,3 +197,5 @@ One row per user. Booleans default `true` unless noted.
 ## Hashtag
 
 Extract `#word` from captions; store normalized tag (lowercase) and link table `post_hashtags`.
+
+> Implementation note: tags are stored on the post (`Post.hashtags`, indexed) instead of a link table, and collection `hashtags` keeps `{ name, post_count }` for autocomplete (`GET /search?type=tags`). Letters of any script (with vowel signs), digits and `_`; all-digit tags are ignored.
