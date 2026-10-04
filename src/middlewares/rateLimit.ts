@@ -55,3 +55,21 @@ export const postCreateLimiter = limiter(60, account);
 
 /** A 4 GB video needs ~30 part-URL batches, plus refreshes on slow networks. */
 export const mediaPartsLimiter = limiter(600, account);
+
+/** Per-user send limit; generous for real conversations, stops scripted flooding. */
+export const messageLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  skip: () => env.NODE_ENV === 'test',
+  keyGenerator: (req) => (req.user?.id as string | undefined) ?? ip(req),
+  handler: (_req, res) => {
+    res.status(429).json({
+      error: {
+        code: 'TOO_MANY_REQUESTS',
+        message: "You're sending messages too fast. Wait a moment and try again.",
+      },
+    });
+  },
+});

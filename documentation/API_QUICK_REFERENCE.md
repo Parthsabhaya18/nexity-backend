@@ -132,13 +132,21 @@ In development without SMTP, code-sending responses also include `dev_code`.
 
 ## Messages
 
+Implemented ([chat-thread.md](modules/messages/chat-thread.md)). `GET /users/search?q=` is implemented too (people picker; empty `q` returns suggestions).
+
 | Method | Path |
 |--------|------|
 | GET | `/conversations` |
 | POST | `/conversations` |
+| GET | `/conversations/:id` |
 | GET | `/conversations/:id/messages` |
 | POST | `/conversations/:id/messages` |
 | POST | `/conversations/:id/read` |
+| DELETE | `/conversations/:id/messages/:messageId` (unsend) |
+| POST | `/conversations/:id/mute` |
+| DELETE | `/conversations/:id` (delete for me) |
+| GET | `/gifs/trending` |
+| GET | `/gifs/search?q=` |
 
 ## Notifications & reports
 
@@ -215,4 +223,4 @@ See [PUSH_NOTIFICATIONS.md](architecture/PUSH_NOTIFICATIONS.md).
 
 | URL | Notes |
 |-----|-------|
-| `/ws/v1/chat` | First frame `{ "type": "auth", "token": "..." }`; events in [chat-thread.md](modules/messages/chat-thread.md) |
+| `/ws/v1/chat` | Socket.IO path; access token in the handshake `auth: { token }`; events in [chat-thread.md](modules/messages/chat-thread.md) |

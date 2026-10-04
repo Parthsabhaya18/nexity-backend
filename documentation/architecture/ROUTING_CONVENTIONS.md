@@ -116,7 +116,8 @@ Show `message` to the user; branch on `code` in code.
 
 ## WebSocket (messages)
 
-- URL: `wss://api.nexity.com/ws/v1/chat` (dev `ws://localhost:4000/ws/v1/chat`).
-- Authenticate with the access token in the first message (`{ "type": "auth", "token": "..." }`) — custom headers are unreliable on React Native WebSocket.
-- Reconnect with backoff and on app foreground; close when the app is backgrounded for > 30 s (push takes over).
+- Transport: **Socket.IO v4** (`socket.io` on the server, `socket.io-client` in the app, `transports: ['websocket']`), served on the API host at path **`/ws/v1/chat`** (prod `https://api.nexity.com`, dev `http://localhost:4000`).
+- Authenticate with the access token in the Socket.IO handshake: `io(origin, { path: '/ws/v1/chat', auth: { token } })` — custom headers are unreliable on React Native. On `connect_error` with an auth code, refresh the token and reconnect.
+- Reconnect with backoff and on app foreground, then fetch missed messages (`?after=`); close when the app is backgrounded for > 30 s (push takes over).
+- One server instance keeps presence and rooms in memory; running several instances needs the Socket.IO Redis adapter.
 - Events documented in [chat-thread.md](../modules/messages/chat-thread.md).

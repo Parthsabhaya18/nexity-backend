@@ -124,6 +124,35 @@ No `is_edited` — stories are not editable after publish (Instagram parity).
 - **Conversation**: id, type `direct` \| `group`, participant ids.
 - **Message**: id, conversation_id, sender_id, body, media_id optional (→ MediaAsset), story_id optional (story reply), client_message_id (UUID generated on the device for de-duplication / optimistic UI), read_by[], created_at.
 
+Physical schema (MongoDB, `backend/src/modules/messages/`):
+
+**`conversations`**
+
+| Field | Notes |
+|-------|-------|
+| type | `direct` \| `group` |
+| direct_key | sorted participant ids joined by `:`; unique (partial index) → one direct chat per pair |
+| participant_ids | ObjectId[]; index `{ participant_ids, last_message_at: -1, _id: -1 }` serves the inbox |
+| members[] | per participant: `user_id`, `role`, `joined_at`, `last_read_message_id`, `last_read_at`, `unread_count`, `muted_until`, `cleared_at`, `hidden` |
+| last_message | denormalised preview `{ id, sender_id, type, body (≤200), created_at }` so the inbox never reads `messages` |
+| last_message_at, message_count, created_by, created_at, updated_at | |
+
+**`messages`**
+
+| Field | Notes |
+|-------|-------|
+| conversation_id, sender_id | index `{ conversation_id, _id: -1 }` — ObjectIds are time-ordered, so `_id` is the page cursor |
+| type | `text` \| `image` \| `system` |
+| body | trimmed, max 2000 |
+| media | `{ media_id, url, width, height }` or null (filled once Cloudinary uploads ship) |
+| reply_to_id | optional |
+| client_message_id | unique per sender `{ sender_id, client_message_id }` — idempotent retries |
+| deleted_at | unsend keeps the row, hides the content |
+
+`read_by[]` is represented by `members[].last_read_message_id`: a message is read by a member when its id ≤ their marker. This keeps read receipts O(1) per read instead of one write per message.
+
+**`users.last_active_at`** is set when a user's last chat socket disconnects (activity status).
+
 ## Device (push notifications)
 
 | Field | Type | Notes |

@@ -18,6 +18,7 @@ import { userReels } from '../reels/reel.routes';
 import { block, blocked, unblock } from '../safety/safety.controller';
 import { suggestions } from '../search/search.controller';
 import { updateMe, updatePreferences } from './user.controller';
+import { searchUsers } from './user.search';
 
 export const usersRouter = Router();
 
@@ -25,6 +26,8 @@ usersRouter.use(requireAuth);
 
 usersRouter.get('/me', me);
 usersRouter.get('/suggestions', searchLimiter, suggestions);
+/** People picker for New message. */
+usersRouter.get('/search', searchLimiter, searchUsers);
 usersRouter.patch('/me', profileUpdateLimiter, updateMe);
 usersRouter.patch('/me/preferences', profileUpdateLimiter, updatePreferences);
 usersRouter.get('/me/saved-posts', savedPosts);
