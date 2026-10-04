@@ -1,9 +1,11 @@
-import type { Server } from 'node:http';
+import { createServer, type Server } from 'node:http';
 
 import { createApp } from './app';
 import { connectDatabase, disconnectDatabase } from './config/database';
 import { env, isMediaConfigured } from './config/env';
 import { startMediaCleanup, stopMediaCleanup } from './modules/media/media.cleanup';
+import { registerChatHandlers } from './modules/messages/messages.socket';
+import { attachRealtime, closeRealtime } from './realtime/io';
 import { startKeepAlive, stopKeepAlive } from './utils/keepAlive';
 import { logger } from './utils/logger';
 
@@ -13,8 +15,9 @@ let shuttingDown = false;
 async function start() {
   await connectDatabase();
 
-  const app = createApp();
-  server = app.listen(env.PORT, env.HOST, () => {
+  server = createServer(createApp());
+  attachRealtime(server, registerChatHandlers);
+  server.listen(env.PORT, env.HOST, () => {
     logger.info(`Nexity API listening on http://${env.HOST}:${env.PORT}${env.API_PREFIX}`);
     startKeepAlive();
     startMediaCleanup();
@@ -34,6 +37,7 @@ async function shutdown(signal: string, exitCode = 0) {
   logger.info(`${signal} received, shutting down`);
   stopKeepAlive();
   stopMediaCleanup();
+  closeRealtime();
   setTimeout(() => process.exit(1), 10_000).unref();
 
   try {

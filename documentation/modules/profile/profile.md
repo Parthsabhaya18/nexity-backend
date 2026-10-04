@@ -28,6 +28,8 @@ Profile (`id`, `username`, `display_name`, `avatar_url`, `bio`, `website`, `is_p
 
 > Implementation note: `UserProfile` takes `{ username }`; opening your own username replaces it with `Profile`. Actions are Follow / Follow back / Requested / Following ▾ (action sheet with Unfollow) and Share profile; **Message** waits for chat. The ••• menu has Share profile only until Block / Report (safety step). The own profile shows a **Follow requests** row when `follow_requests_count > 0`.
 
+**Implemented** (`src/modules/users/user.profile.ts`): `{ id, username, display_name, avatar_url, bio, is_private, is_self, stats: { posts, followers, following }, is_following, is_followed_by, follow_status, has_active_story, presence: { online, last_active_at }, created_at }`. Username lookup is case-insensitive; unknown or disabled accounts return `404`. Stats and relationship fields are placeholders (`0` / `false` / `"none"`) until the follows, posts and stories modules ship. The app opens it from the chat header, a message avatar, and "View profile" in the thread intro.
+
 ### `GET /api/v1/users/me`
 
 Own profile (used by `Profile` and to refresh the auth context; refetched on focus and pull-to-refresh). Includes `bio`, `website` (full URL or `""`), `avatar_url`, `is_private`, `posts_count`, `followers_count`, `following_count`. Edits go through `PATCH /users/me` — see [edit-profile.md](edit-profile.md).
