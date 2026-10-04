@@ -13,11 +13,8 @@ declare module 'express-serve-static-core' {
 // JWT `iat` has one-second precision, so a token issued in the same second as a password change stays valid.
 const IAT_PRECISION_MS = 1000;
 
-export const requireAuth: RequestHandler = async (req, _res, next) => {
-  const header = req.headers.authorization ?? '';
-  const [scheme, token] = header.split(' ');
-  if (scheme !== 'Bearer' || !token) throw ApiError.unauthorized('Missing access token');
-
+/** Resolves an access token to an active user. Shared by REST and the chat socket handshake. */
+export async function authenticateAccessToken(token: string): Promise<UserDoc> {
   const { userId, issuedAt } = verifyAccessToken(token);
   const user = await User.findById(userId);
   if (!user) throw ApiError.unauthorized('Invalid access token');
@@ -30,7 +27,14 @@ export const requireAuth: RequestHandler = async (req, _res, next) => {
   if (user.status === 'disabled') {
     throw ApiError.forbidden('Your account has been disabled.', 'ACCOUNT_DISABLED');
   }
+  return user;
+}
 
-  req.user = user;
+export const requireAuth: RequestHandler = async (req, _res, next) => {
+  const header = req.headers.authorization ?? '';
+  const [scheme, token] = header.split(' ');
+  if (scheme !== 'Bearer' || !token) throw ApiError.unauthorized('Missing access token');
+
+  req.user = await authenticateAccessToken(token);
   next();
 };

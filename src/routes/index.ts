@@ -2,8 +2,10 @@ import { Router } from 'express';
 
 import { authRouter } from '../modules/auth/auth.routes';
 import { followRequestsRouter } from '../modules/follows/follow.routes';
+import { gifsRouter } from '../modules/gifs/gifs.routes';
 import { healthRouter } from '../modules/health/health.routes';
 import { mediaRouter } from '../modules/media/media.routes';
+import { conversationsRouter } from '../modules/messages/messages.routes';
 import { commentsRouter, feedRouter, postsRouter, tagsRouter } from '../modules/posts/post.routes';
 import { reelsRouter } from '../modules/reels/reel.routes';
 import { searchRouter } from '../modules/search/search.routes';
@@ -28,3 +30,5 @@ apiRouter.use('/stories', storiesRouter);
 apiRouter.use('/reels', reelsRouter);
 apiRouter.use('/reports', reportsRouter);
 apiRouter.use('/notifications', notificationsRouter);
+apiRouter.use('/conversations', conversationsRouter);
+apiRouter.use('/gifs', gifsRouter);

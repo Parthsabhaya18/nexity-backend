@@ -1,5 +1,6 @@
 import mongoose, { type Types } from 'mongoose';
 
+import { isOnline } from '../../realtime/io';
 import { ApiError } from '../../utils/ApiError';
 import { userSearchFilter } from '../../utils/regex';
 import { isBlockedEither } from '../safety/block.service';
@@ -154,6 +155,10 @@ export async function getProfile(viewer: UserDoc, username: string) {
     follow_status: status,
     follows_you: Boolean(followsYou),
     can_view_content: isSelf || !user.is_private || status === 'accepted',
+    presence: {
+      online: isOnline(user.id as string),
+      last_active_at: user.last_active_at ? user.last_active_at.toISOString() : null,
+    },
   };
 }
 

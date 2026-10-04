@@ -56,6 +56,8 @@ const userSchema = new mongoose.Schema(
     failed_login_count: { type: Number, default: 0 },
     lock_until: { type: Date, default: null },
     password_changed_at: { type: Date, default: () => new Date() },
+    /** Set when the user's last chat socket disconnects; powers "Active 5m ago". */
+    last_active_at: { type: Date, default: null },
   },
   {
     collection: 'users',
@@ -66,11 +68,45 @@ const userSchema = new mongoose.Schema(
 export type UserAttrs = InferSchemaType<typeof userSchema>;
 export type UserDoc = HydratedDocument<UserAttrs>;
 
+userSchema.index({ display_name: 1 });
+
 export const User = mongoose.model('User', userSchema);
 
-export async function avatarUrlOf(user: UserDoc) {
+export async function avatarUrlOf(user: Pick<UserAttrs, 'avatar_key' | 'avatar_url'>) {
   return user.avatar_key ? viewUrl(user.avatar_key) : (user.avatar_url ?? null);
 }
+
+export interface PublicUserSource {
+  _id: mongoose.Types.ObjectId;
+  username: string;
+  display_name: string;
+  avatar_url?: string | null;
+  avatar_key?: string | null;
+  last_active_at?: Date | null;
+}
+
+/** Swaps uploaded avatars (`avatar_key`) for a viewable URL before building DTOs. */
+export function withAvatarUrls<T extends PublicUserSource>(users: readonly T[]): Promise<T[]> {
+  return Promise.all(
+    users.map(async (u) =>
+      u.avatar_key ? { ...u, avatar_url: await viewUrl(u.avatar_key) } : u,
+    ),
+  );
+}
+
+/** Shape safe to show to other users. */
+export function toPublicUserDto(user: PublicUserSource) {
+  return {
+    id: user._id.toString(),
+    username: user.username,
+    display_name: user.display_name,
+    avatar_url: user.avatar_url ?? null,
+    last_active_at: user.last_active_at ? user.last_active_at.toISOString() : null,
+  };
+}
+
+export const PUBLIC_USER_FIELDS =
+  '_id username display_name avatar_url avatar_key last_active_at';
 
 /** Private shape for the signed-in user. Never return this for other users. */
 export async function toMeDto(user: UserDoc) {

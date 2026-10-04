@@ -69,6 +69,11 @@ const envSchema = z
     // CloudFront (or bucket) origin that serves uploaded files, without a trailing slash.
     MEDIA_PUBLIC_BASE_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
     MEDIA_UPLOAD_URL_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(900),
+
+    GIPHY_API_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
+    GIPHY_RATING: z.enum(['g', 'pg', 'pg-13', 'r']).default('pg-13'),
+    /** How long a user stays "online" after their last chat socket drops. */
+    PRESENCE_OFFLINE_GRACE_MS: z.coerce.number().int().min(0).max(120_000).default(15_000),
   })
   .superRefine((cfg, ctx) => {
     // Tests spin up their own in-memory MongoDB, so the URI is only mandatory outside `test`.

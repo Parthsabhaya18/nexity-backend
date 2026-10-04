@@ -28,7 +28,7 @@ Nexity is a **native iOS + Android app** (React Native) talking to a **Node.js R
 | Splash | `react-native-bootsplash` | Add |
 | Keyboard | `react-native-keyboard-controller` | Add |
 | Haptics | `react-native-haptic-feedback` | Add |
-| Realtime | Native `WebSocket` to `/ws/v1/chat` | Built in |
+| Realtime | `socket.io-client` to `/ws/v1/chat` (`services/realtime/chatSocket.ts`) | Installed |
 | Media pick / camera | `react-native-image-picker` (resize + JPEG on device) | Installed |
 | Media upload | Presigned POST from the device straight to S3 ([MEDIA_STORAGE.md](MEDIA_STORAGE.md)) | Installed |
 | Theming | `ThemeProvider` + `useColorScheme` + semantic tokens ([THEMING.md](THEMING.md)) | Add |
@@ -46,7 +46,7 @@ Platform rules, navigation map, permissions, and release process: **[MOBILE_APP.
 | Auth | JWT access (15 min) + refresh (7 days) with rotation | Add |
 | DB | MongoDB (local `mongod` in development, MongoDB Atlas in production) via Mongoose 9 — connection in `src/config/database.ts` | Installed |
 | Cache / pub-sub | Redis (rate limits, refresh token families, presence, chat fan-out) | Add |
-| Realtime | WebSocket server (`ws`) at `/ws/v1/chat` | Add |
+| Realtime | Socket.IO server at `/ws/v1/chat` (`src/realtime/io.ts`) | Installed |
 | **Media** | **AWS S3 + CloudFront** — posts, reels, stories, avatars, DM attachments (`@aws-sdk/client-s3`, `@aws-sdk/s3-presigned-post`) | Installed |
 | Video processing | None yet: progressive MP4. AWS MediaConvert (HLS) later | — |
 | Push | `firebase-admin` (FCM → Android, APNs → iOS) | Add |
