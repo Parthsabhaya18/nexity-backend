@@ -5,7 +5,7 @@ import { canViewContent, findVisibleUser, toUserSummaries } from '../follows/fol
 import { audienceIds, isBlockedEither } from '../safety/block.service';
 import { Follow } from '../follows/follow.model';
 import { Media } from '../media/media.model';
-import { viewUrl } from '../media/media.storage';
+import { deleteObjects, viewUrl } from '../media/media.storage';
 import { User, type UserDoc } from '../users/user.model';
 import { Notification } from '../notifications/notification.model';
 import {
@@ -187,8 +187,78 @@ export async function markViewed(viewer: UserDoc, storyId: string) {
 export async function deleteStory(viewer: UserDoc, storyId: string) {
   const story = await Story.findOne({ _id: storyId, author_id: viewer._id });
   if (!story) throw ApiError.notFound('This story is no longer available.');
-  await story.deleteOne();
-  await StoryView.deleteMany({ story_id: story._id });
+  await removeStories([story]);
+}
+
+type StoryFiles = { _id: mongoose.Types.ObjectId; key: string; media_id: mongoose.Types.ObjectId };
+
+/**
+ * Deletes the files from S3 first, then everything attached to the stories, and
+ * the stories last, so a failure part-way is retried by the next purge.
+ */
+async function removeStories(stories: StoryFiles[]) {
+  if (!stories.length) return;
+  const ids = stories.map((s) => s._id);
+  await deleteObjects(stories.map((s) => s.key));
+  await Promise.all([
+    Media.deleteMany({ _id: { $in: stories.map((s) => s.media_id) } }),
+    StoryView.deleteMany({ story_id: { $in: ids } }),
+    StoryLike.deleteMany({ story_id: { $in: ids } }),
+    StoryPollVote.deleteMany({ story_id: { $in: ids } }),
+    StoryQuestionReply.deleteMany({ story_id: { $in: ids } }),
+    StoryMessage.deleteMany({ story_id: { $in: ids } }),
+  ]);
+  await Story.deleteMany({ _id: { $in: ids } });
+}
+
+const PURGE_BATCH = 200;
+
+/**
+ * Removes stories older than 24 hours from S3 and the database, plus story
+ * uploads that never became a story. Returns how many of each were removed.
+ */
+export async function purgeExpiredStories(now = new Date()) {
+  let stories = 0;
+  for (;;) {
+    const batch = await Story.find({ expires_at: { $lte: now } })
+      .select('_id key media_id')
+      .limit(PURGE_BATCH)
+      .lean<StoryFiles[]>();
+    if (!batch.length) break;
+    await removeStories(batch);
+    stories += batch.length;
+    if (batch.length < PURGE_BATCH) break;
+  }
+
+  let orphans = 0;
+  const cutoff = new Date(now.getTime() - STORY_TTL_MS);
+  let lastId: mongoose.Types.ObjectId | undefined;
+  for (;;) {
+    const candidates = await Media.find({
+      purpose: 'story',
+      status: 'ready',
+      created_at: { $lt: cutoff },
+      ...(lastId ? { _id: { $gt: lastId } } : {}),
+    })
+      .sort({ _id: 1 })
+      .select('_id key')
+      .limit(PURGE_BATCH)
+      .lean();
+    if (!candidates.length) break;
+    lastId = candidates[candidates.length - 1]!._id;
+    const used = await Story.find({ media_id: { $in: candidates.map((m) => m._id) } })
+      .select('media_id')
+      .lean();
+    const usedIds = new Set(used.map((s) => s.media_id.toHexString()));
+    const unused = candidates.filter((m) => !usedIds.has(m._id.toHexString()));
+    if (unused.length) {
+      await deleteObjects(unused.map((m) => m.key));
+      await Media.deleteMany({ _id: { $in: unused.map((m) => m._id) } });
+      orphans += unused.length;
+    }
+    if (candidates.length < PURGE_BATCH) break;
+  }
+  return { stories, orphans };
 }
 
 async function visibleStory(viewer: UserDoc, storyId: string) {
@@ -238,7 +308,11 @@ export async function replyQuestion(viewer: UserDoc, storyId: string, overlayId:
 
 /** Who viewed the viewer's own story, newest first. */
 export async function storyViewers(viewer: UserDoc, storyId: string) {
-  const story = await Story.findOne({ _id: storyId, author_id: viewer._id });
+  const story = await Story.findOne({
+    _id: storyId,
+    author_id: viewer._id,
+    expires_at: { $gt: new Date() },
+  });
   if (!story) throw ApiError.notFound('This story is no longer available.');
   const views = await StoryView.find({ story_id: story._id }).sort({ _id: -1 }).limit(200).lean();
   const users = await User.find({ _id: { $in: views.map((v) => v.viewer_id) }, status: 'active' });

@@ -23,7 +23,6 @@ Every deep-link path below works with both prefixes:
 | `notifications` | `Notifications` | — | Yes |
 | `posts/:postId` | `PostDetail` | `postId` | Yes |
 | `posts/:postId/comments` | `PostDetail` + Comments sheet open | `postId` | Yes |
-| `tags/:tag` | `HashtagFeed` | `tag` | Yes |
 | `saved` | `SavedPosts` | — | Yes |
 | `reels` | `Reels` (ReelsTab) | — | Yes |
 | `reels/:reelId` | `ReelDetail` | `reelId` | Yes |
@@ -45,7 +44,7 @@ Every deep-link path below works with both prefixes:
 | `settings/privacy` | `PrivacySettings` | — | Yes |
 | `settings/account` | `AccountSettings` | — | Yes |
 
-Screens **without** a deep link (only reached in-app): `VerifyEmail` and `ResetPassword` (email codes, not links), `ForgotPassword`, onboarding screens, `EditPost`, `EditReel`, `EditProfile`, `NewMessage`, `CreateGroup`, `BlockedAccounts`, `AdminModeration`, all bottom sheets.
+Screens **without** a deep link (only reached in-app): `VerifyEmail` and `ResetPassword` (email codes, not links), `ForgotPassword`, onboarding screens, `EditPost`, `EditReel`, `EditProfile`, `NewMessage`, `CreateGroup`, `BlockedAccounts`, `AdminModeration`, `DevComponents` (debug builds only), all bottom sheets.
 
 ### Rules
 

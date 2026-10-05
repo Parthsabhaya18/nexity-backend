@@ -15,7 +15,7 @@ import {
 import { userPosts } from '../posts/post.controller';
 import { savedPosts } from '../posts/post.routes';
 import { userReels } from '../reels/reel.routes';
-import { block, blocked, unblock } from '../safety/safety.controller';
+import { block, blocked, mute, unblock, unmute } from '../safety/safety.controller';
 import { suggestions } from '../search/search.controller';
 import { updateMe, updatePreferences } from './user.controller';
 import { searchUsers } from './user.search';
@@ -43,3 +43,5 @@ usersRouter.post('/:userId/follow', followLimiter, follow);
 usersRouter.delete('/:userId/follow', followLimiter, unfollow);
 usersRouter.post('/:userId/block', followLimiter, block);
 usersRouter.delete('/:userId/block', followLimiter, unblock);
+usersRouter.post('/:userId/mute', followLimiter, mute);
+usersRouter.delete('/:userId/mute', followLimiter, unmute);

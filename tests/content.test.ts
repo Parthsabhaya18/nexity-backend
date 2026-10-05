@@ -19,7 +19,16 @@ import { Media } from '../src/modules/media/media.model';
 import { Comment, PostLike, PostSave } from '../src/modules/posts/post.engage.model';
 import { Post } from '../src/modules/posts/post.model';
 import { Reel, ReelLike } from '../src/modules/reels/reel.model';
-import { Story, StoryPollVote, StoryQuestionReply, StoryView } from '../src/modules/stories/story.model';
+import * as storage from '../src/modules/media/media.storage';
+import {
+  Story,
+  StoryLike,
+  StoryMessage,
+  StoryPollVote,
+  StoryQuestionReply,
+  StoryView,
+} from '../src/modules/stories/story.model';
+import { purgeExpiredStories } from '../src/modules/stories/story.service';
 import { User } from '../src/modules/users/user.model';
 
 let mongo: MongoMemoryServer;
@@ -82,7 +91,7 @@ beforeAll(async () => {
   mongo = await MongoMemoryServer.create();
   await connectDatabase(mongo.getUri());
   await Promise.all(
-    [User, OtpCode, RefreshToken, Follow, Media, Post, PostLike, PostSave, Comment, Story, StoryView, StoryPollVote, StoryQuestionReply, Reel, ReelLike].map(
+    [User, OtpCode, RefreshToken, Follow, Media, Post, PostLike, PostSave, Comment, Story, StoryView, StoryLike, StoryMessage, StoryPollVote, StoryQuestionReply, Reel, ReelLike].map(
       (m) => m.init(),
     ),
   );
@@ -95,7 +104,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await Promise.all(
-    [User, OtpCode, RefreshToken, Follow, Media, Post, PostLike, PostSave, Comment, Story, StoryView, StoryPollVote, StoryQuestionReply, Reel, ReelLike].map(
+    [User, OtpCode, RefreshToken, Follow, Media, Post, PostLike, PostSave, Comment, Story, StoryView, StoryLike, StoryMessage, StoryPollVote, StoryQuestionReply, Reel, ReelLike].map(
       (m) => (m as mongoose.Model<unknown>).deleteMany({}),
     ),
   );
@@ -179,6 +188,47 @@ describe('stories and reels', () => {
     expect((await api(bob).get('/stories/tray')).body.items[0].seen).toBe(true);
     expect((await api(alice).get(`/stories/${storyId}/viewers`)).body.items[0].username).toBe('bob');
     expect((await api(alice).del(`/stories/${storyId}`)).status).toBe(204);
+    expect(vi.mocked(storage.deleteObjects)).toHaveBeenCalledWith([expect.stringMatching(/^story\//)]);
+    expect(await Media.countDocuments({ purpose: 'story' })).toBe(0);
+  });
+
+  it('removes a story and its S3 file once 24 hours have passed', async () => {
+    const mediaId = await media(alice, 'story');
+    const created = await api(alice).post('/stories', { media_id: mediaId });
+    const storyId = created.body.id as string;
+    await api(bob).post(`/users/${alice.id}/follow`);
+    await api(bob).post(`/stories/${storyId}/view`);
+    expect((await request(app).put(`/api/v1/stories/${storyId}/like`).set('Authorization', bob.auth)).status).toBe(200);
+    expect((await api(bob).post(`/stories/${storyId}/message`, { body: 'Nice' })).status).toBe(201);
+    const key = (await Media.findById(mediaId))!.key;
+
+    const fresh = await media(alice, 'story');
+    const unused = await media(alice, 'story');
+    const dayAgo = new Date(Date.now() - 25 * 60 * 60 * 1000);
+    await Media.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(unused) },
+      { $set: { created_at: dayAgo } },
+    );
+
+    await Story.updateOne({ _id: storyId }, { expires_at: new Date(Date.now() - 1000) });
+    expect((await api(bob).get('/stories/tray')).body.items).toEqual([]);
+    expect((await api(bob).post(`/stories/${storyId}/view`)).status).toBe(404);
+    expect((await api(alice).get(`/stories/${storyId}/viewers`)).status).toBe(404);
+
+    vi.mocked(storage.deleteObjects).mockClear();
+    expect(await purgeExpiredStories()).toEqual({ stories: 1, orphans: 1 });
+    const deleted = vi.mocked(storage.deleteObjects).mock.calls.flat(2);
+    expect(deleted).toContain(key);
+    expect(deleted).toHaveLength(2);
+    expect(await Story.countDocuments()).toBe(0);
+    expect(await StoryView.countDocuments()).toBe(0);
+    expect(await StoryLike.countDocuments()).toBe(0);
+    expect(await StoryMessage.countDocuments()).toBe(0);
+    expect(await Media.exists({ _id: mediaId })).toBeNull();
+    expect(await Media.exists({ _id: unused })).toBeNull();
+    expect(await Media.exists({ _id: fresh })).not.toBeNull();
+
+    expect(await purgeExpiredStories()).toEqual({ stories: 0, orphans: 0 });
   });
 
   it('saves story text, a poll vote and a question answer', async () => {

@@ -57,6 +57,8 @@ In development without SMTP, code-sending responses also include `dev_code`.
 | DELETE | `/users/:id/follow` |
 | POST | `/users/:id/block` |
 | DELETE | `/users/:id/block` |
+| POST | `/users/:id/mute` (`204`, idempotent; `400 CANNOT_MUTE_SELF`, `404` unknown user; the profile returns `muted`. Feeds filtering muted accounts via `mutedIdsFor()` comes with the feed work) |
+| DELETE | `/users/:id/mute` (`204`) |
 | GET | `/users/me/follow-requests` |
 | DELETE | `/users/me/followers/:userId` (remove follower) |
 | GET | `/users/search` (planned for New message; app search uses `/search?type=users`) |
@@ -67,7 +69,11 @@ In development without SMTP, code-sending responses also include `dev_code`.
 |--------|------|
 | GET | `/feed` |
 | GET | `/explore` |
-| GET | `/search` |
+| GET | `/search` (`type=users` or `places`; blocked users never appear) |
+| GET | `/search/history` (recent profiles opened from Search) |
+| POST | `/search/history` (`{ user_id }`) |
+| DELETE | `/search/history` (clear all) |
+| DELETE | `/search/history/:userId` |
 
 ## Posts
 
@@ -78,6 +84,8 @@ In development without SMTP, code-sending responses also include `dev_code`.
 | PATCH | `/posts/:id` (caption, location, alt text, like/comment settings) |
 | DELETE | `/posts/:id` (soft delete) |
 | POST | `/posts/:id/like` (toggle) |
+| PUT | `/posts/:id/like` (like, idempotent; returns `{ liked, likes_count, post }`) |
+| DELETE | `/posts/:id/like` (unlike, idempotent) |
 | POST | `/posts/:id/save` (toggle) |
 | GET | `/posts/:id/comments` |
 | POST | `/posts/:id/comments` |
@@ -85,17 +93,23 @@ In development without SMTP, code-sending responses also include `dev_code`.
 | GET | `/feed` |
 | GET | `/users/me/saved-posts` |
 | GET | `/users/:id/posts` |
-| GET | `/tags/:tag/posts` |
 | POST | `/stories` |
 | GET | `/stories/tray` |
 | POST | `/stories/:id/view` |
 | POST | `/stories/:id/vote` |
 | POST | `/stories/:id/reply` |
+| PUT | `/stories/:id/like` |
+| DELETE | `/stories/:id/like` |
+| POST | `/stories/:id/message` (private reply to the author) |
+| GET | `/stories/:id/viewers` (owner only) |
 | DELETE | `/stories/:id` |
 | POST | `/reels` |
 | GET | `/reels` |
 | GET | `/users/:id/reels` |
 | POST | `/reels/:id/like` |
+| PUT | `/reels/:id/like` (idempotent, returns the reel) |
+| DELETE | `/reels/:id/like` |
+| PATCH | `/reels/:id` (caption, `hide_like_count`, `comments_disabled`) |
 | DELETE | `/reels/:id` |
 | PATCH | `/users/me/preferences` (`theme`, `mood`) |
 | PATCH | `/posts/:id` |
@@ -105,7 +119,6 @@ In development without SMTP, code-sending responses also include `dev_code`.
 | GET | `/posts/:id/comments` |
 | POST | `/posts/:id/comments` |
 | GET | `/users/me/saved-posts` |
-| GET | `/tags/:tag/posts` |
 
 ## Reels
 
@@ -182,7 +195,9 @@ See [PUSH_NOTIFICATIONS.md](architecture/PUSH_NOTIFICATIONS.md).
 
 | Method | Path |
 |--------|------|
-| POST | `/media/uploads` |
+| POST | `/media/uploads` (optional `client_upload_id`: same id + same file returns the same media with `resumed: true` and a fresh POST, the same multipart upload, or `upload.method: "complete"`) |
+| POST | `/media/:id/parts` |
+| GET | `/media/:id/parts` |
 | POST | `/media/:id/complete` |
 | GET | `/media/:id` |
 | DELETE | `/media/:id` |

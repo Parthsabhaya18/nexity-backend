@@ -23,6 +23,11 @@ export const createUploadSchema = z.object({
     .max(24 * 60 * 60 * 1000)
     .optional()
     .catch(undefined),
+  /** Generated on the device per file; sending it again (retry, app restart) returns the same upload. */
+  client_upload_id: z
+    .string()
+    .regex(/^[\w-]{8,64}$/, 'Invalid client_upload_id')
+    .optional(),
 });
 
 export type CreateUploadInput = z.infer<typeof createUploadSchema>;

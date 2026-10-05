@@ -11,7 +11,8 @@ Nexity is a **native iOS + Android app** (React Native) talking to a **Node.js R
 | Navigation | React Navigation 7 — `native-stack` + `bottom-tabs` (+ `material-top-tabs` for profile / followers tabs) | `native-stack` installed |
 | Native screens & safe area | `react-native-screens`, `react-native-safe-area-context` | Installed |
 | HTTP | axios (`services/api/client.ts`) | Installed |
-| Server state | TanStack Query (`@tanstack/react-query`) | Add |
+| Server state | TanStack Query (`@tanstack/react-query`) — shared entity cache for relationships and engagement (`features/entities/`) | Installed |
+| Image editing | `@shopify/react-native-skia` — filter colour matrices, live previews, offscreen export (`bakeImage`) | Installed |
 | Forms | React Hook Form + Zod (`@hookform/resolvers`) | Add |
 | Gestures & animation | `react-native-gesture-handler`, `react-native-reanimated` | Add |
 | Bottom sheets | `@gorhom/bottom-sheet` | Add |
@@ -22,7 +23,7 @@ Nexity is a **native iOS + Android app** (React Native) talking to a **Node.js R
 | Video | `react-native-video` | Add |
 | Camera | `react-native-vision-camera` | Add |
 | Gallery | `@react-native-camera-roll/camera-roll` | Add |
-| Permissions | `react-native-permissions` | Add |
+| Permissions | `react-native-permissions` | Installed |
 | Push | `@react-native-firebase/messaging` + `@notifee/react-native` ([PUSH_NOTIFICATIONS.md](PUSH_NOTIFICATIONS.md)) | Add |
 | Network status | `@react-native-community/netinfo` | Add |
 | Splash | `react-native-bootsplash` | Add |
@@ -100,16 +101,18 @@ Never put secrets (AWS keys, JWT secrets, Firebase private key) in the mobile ap
 
 ## Media limits (default)
 
-Like Instagram, users are never asked to shrink or shorten a file: the app compresses on the device, and the server ceilings are only abuse guards that a compressed file never reaches. Enforced at `POST /media/uploads`, in the S3 POST policy (size) and at `complete` (size + real format). Source: `backend/src/modules/media/media.rules.ts`.
+The app compresses on the device first, then checks the size of the file it is about to upload; a file still over the limit is refused before any upload starts. The server enforces the same limits at `POST /media/uploads` (declared size, `400 MEDIA_TOO_LARGE` with `details.max_bytes`), in the S3 POST policy or the exact length of each multipart part, and at `complete` (the stored object's real size; an oversize object is deleted from S3). Source: `backend/src/modules/media/media.rules.ts`, mirrored in `frontend/src/features/media/mediaRules.ts`.
 
 Accepted input everywhere: images jpg, png, webp, heic/heif; videos mp4, mov.
 
-| Type | On-device processing | Server ceiling |
+| Type | On-device processing | Max file size |
 |------|----------------------|----------------|
-| Avatar (image only) | Resize to 640 px, JPEG 0.8 | 20 MB |
-| Post / story / message image | Resize to 1440 / 1920 / 1600 px, JPEG 0.8 | 50 MB |
-| Post / reel / story / message video | Compressed (`auto`) when over 10 MB, MP4 | 4 GB |
+| Avatar (image only) | Resize to 640 px, JPEG 0.8 | 10 MB |
+| Post image | Resize to 1440 px, JPEG 0.8 | 10 MB |
+| Message (chat) image | Resize to 1600 px, JPEG 0.8 | 10 MB |
+| Story image | Resize to 1920 px, JPEG 0.8 | 200 MB |
+| Post / reel / story / message video | Compressed (`auto`) when over 10 MB, MP4 | 200 MB |
 
-There is **no upload duration limit**. Reels and stories pick a playback window (`trim_start_ms` / `trim_end_ms`) in their own modules instead of rejecting long videos.
+Post, reel and story videos can be up to **2 minutes**; chat videos have no length limit.
 
 Document changes in the relevant module file when limits change.

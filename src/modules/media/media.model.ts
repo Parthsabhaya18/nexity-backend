@@ -22,6 +22,8 @@ const mediaSchema = new mongoose.Schema(
     /** S3 multipart upload id while a large file is uploading in parts. */
     upload_id: { type: String, default: null },
     part_size: { type: Number, default: null },
+    /** Device-generated id; makes `POST /media/uploads` idempotent across retries and restarts. */
+    client_upload_id: { type: String, default: null },
   },
   {
     collection: 'media_assets',
@@ -30,6 +32,11 @@ const mediaSchema = new mongoose.Schema(
 );
 
 mediaSchema.index({ status: 1, upload_expires_at: 1 });
+mediaSchema.index({ purpose: 1, status: 1, created_at: 1 });
+mediaSchema.index(
+  { owner_id: 1, client_upload_id: 1 },
+  { unique: true, partialFilterExpression: { client_upload_id: { $type: 'string' } } },
+);
 
 export type MediaAttrs = InferSchemaType<typeof mediaSchema>;
 export type MediaDoc = HydratedDocument<MediaAttrs>;

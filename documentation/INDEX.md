@@ -50,7 +50,7 @@ Every screen's deep link works as `nexity://<path>` and `https://nexity.com/<pat
 | Edit post | `EditPost` (modal) | — | [modules/posts/edit-post.md](modules/posts/edit-post.md) |
 | Comments | Comments bottom sheet | `posts/:postId/comments` | [modules/posts/comments.md](modules/posts/comments.md) |
 | Saved posts | `SavedPosts` | `saved` | [modules/posts/saved-posts.md](modules/posts/saved-posts.md) |
-| Hashtag feed | `HashtagFeed` | `tags/:tag` | [modules/posts/hashtag-feed.md](modules/posts/hashtag-feed.md) |
+| Post viewer (swipe between a profile's posts) | `PostViewer` | — | [modules/posts/post-viewer.md](modules/posts/post-viewer.md) |
 
 ## Reels
 
@@ -106,6 +106,12 @@ Every screen's deep link works as `nexity://<path>` and `https://nexity.com/<pat
 | Theme (Light / Dark / System or a mood) | `AppearanceSettings` | `settings/appearance` | [modules/settings/appearance.md](modules/settings/appearance.md) |
 | Report content | Report bottom sheet | — | [modules/settings/report.md](modules/settings/report.md) |
 | Saved posts | Profile tab and `SavedPosts` | — | [modules/posts/create-post.md](modules/posts/create-post.md) |
+
+## Developer (debug builds only)
+
+| Module | Screen | Deep link | Doc |
+|--------|--------|-----------|-----|
+| Component gallery (shared UI in Light / Dark / mood, live permission flow, FollowButton with mocked states, MediaFit + filters + export + upload) | `DevComponents` (Settings → Developer; registered only when `__DEV__`) | — | [modules/content-flow/NEXITY_CONTENT_SOCIAL_FLOW.md](modules/content-flow/NEXITY_CONTENT_SOCIAL_FLOW.md#shared-building-blocks-implemented) |
 
 ## Admin (moderators)
 

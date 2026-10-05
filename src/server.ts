@@ -5,6 +5,7 @@ import { connectDatabase, disconnectDatabase } from './config/database';
 import { env, isMediaConfigured } from './config/env';
 import { startMediaCleanup, stopMediaCleanup } from './modules/media/media.cleanup';
 import { registerChatHandlers } from './modules/messages/messages.socket';
+import { startStoryCleanup, stopStoryCleanup } from './modules/stories/story.cleanup';
 import { attachRealtime, closeRealtime } from './realtime/io';
 import { startKeepAlive, stopKeepAlive } from './utils/keepAlive';
 import { logger } from './utils/logger';
@@ -21,6 +22,7 @@ async function start() {
     logger.info(`Nexity API listening on http://${env.HOST}:${env.PORT}${env.API_PREFIX}`);
     startKeepAlive();
     startMediaCleanup();
+    startStoryCleanup();
     if (!isMediaConfigured) {
       logger.warn('S3 is not configured (AWS_REGION, S3_BUCKET); media uploads are disabled');
     }
@@ -37,6 +39,7 @@ async function shutdown(signal: string, exitCode = 0) {
   logger.info(`${signal} received, shutting down`);
   stopKeepAlive();
   stopMediaCleanup();
+  stopStoryCleanup();
   closeRealtime();
   setTimeout(() => process.exit(1), 10_000).unref();
 

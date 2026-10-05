@@ -163,7 +163,7 @@ describe('POST /media/uploads', () => {
     const reel = await startUpload(auth, {
       purpose: 'reel',
       content_type: 'video/mp4',
-      bytes: 900 * 1024 * 1024,
+      bytes: 150 * 1024 * 1024,
       duration_ms: 2 * 60 * 1000 + 400,
     });
     expect(reel.status).toBe(201);
@@ -188,6 +188,45 @@ describe('POST /media/uploads', () => {
     expect(noMeta.body.media).toMatchObject({ width: null, duration_ms: null });
   });
 
+  it('enforces the size limit for each purpose and kind', async () => {
+    const MB = 1024 * 1024;
+    const cases = [
+      { purpose: 'avatar', content_type: 'image/jpeg', max: 10 * MB },
+      { purpose: 'post', content_type: 'image/jpeg', max: 10 * MB },
+      { purpose: 'post', content_type: 'video/mp4', max: 200 * MB },
+      { purpose: 'reel', content_type: 'video/mp4', max: 200 * MB },
+      { purpose: 'story', content_type: 'image/jpeg', max: 200 * MB },
+      { purpose: 'story', content_type: 'video/mp4', max: 200 * MB },
+      { purpose: 'message', content_type: 'image/jpeg', max: 10 * MB },
+      { purpose: 'message', content_type: 'video/mp4', max: 200 * MB },
+    ];
+    for (const c of cases) {
+      const atLimit = await startUpload(auth, { ...c, max: undefined, bytes: c.max });
+      expect(atLimit.status).toBe(201);
+      await request(app)
+        .delete(`/api/v1/media/${atLimit.body.media.id}`)
+        .set('Authorization', auth);
+
+      const over = await startUpload(auth, { ...c, max: undefined, bytes: c.max + 1 });
+      expect(over.status).toBe(400);
+      expect(over.body.error.code).toBe('MEDIA_TOO_LARGE');
+      expect(over.body.error.details.max_bytes).toBe(c.max);
+    }
+  });
+
+  it('deletes a stored file that turns out larger than the limit', async () => {
+    const res = await startUpload(auth, { purpose: 'post', content_type: 'image/jpeg', bytes: 12 });
+    const key = res.body.upload.fields.key as string;
+    store.objects.set(key, JPEG);
+    store.sizes.set(key, 10 * 1024 * 1024 + 1);
+
+    const done = await complete(auth, res.body.media.id);
+    expect(done.status).toBe(400);
+    expect(done.body.error.code).toBe('MEDIA_TOO_LARGE');
+    expect(store.objects.has(key)).toBe(false);
+    expect(await Media.countDocuments()).toBe(0);
+  });
+
   it('rejects unsupported types, wrong kinds and files over the safety ceiling', async () => {
     const gif = await startUpload(auth, { purpose: 'post', content_type: 'image/gif', bytes: 10 });
     expect(gif.status).toBe(400);
@@ -206,7 +245,7 @@ describe('POST /media/uploads', () => {
       bytes: 25 * 1024 * 1024,
     });
     expect(bigAvatar.body.error.code).toBe('MEDIA_TOO_LARGE');
-    expect(bigAvatar.body.error.details.max_bytes).toBe(20 * 1024 * 1024);
+    expect(bigAvatar.body.error.details.max_bytes).toBe(10 * 1024 * 1024);
   });
 
   it('rejects videos longer than Instagram allows for each purpose', async () => {
@@ -460,6 +499,77 @@ describe('multipart uploads (large files)', () => {
     store.uploads.clear();
     expect((await listParts(id)).body.error.code).toBe('UPLOAD_EXPIRED');
     expect((await complete(auth, id)).body.error.code).toBe('UPLOAD_EXPIRED');
+  });
+});
+
+describe('client_upload_id (retry and resume after an app restart)', () => {
+  const MB = 1024 * 1024;
+  const small = { purpose: 'post', content_type: 'image/jpeg', bytes: 12, client_upload_id: 'cu-small-0001' };
+  const big = {
+    purpose: 'reel',
+    content_type: 'video/mp4',
+    bytes: 40 * MB + 123,
+    duration_ms: 110_000,
+    client_upload_id: 'cu-big-000001',
+  };
+
+  it('returns the same media with a fresh presigned POST for the same key', async () => {
+    const first = await startUpload(auth, small);
+    const again = await startUpload(auth, small);
+    expect(again.status).toBe(201);
+    expect(first.body.resumed).toBeUndefined();
+    expect(again.body.resumed).toBe(true);
+    expect(again.body.media.id).toBe(first.body.media.id);
+    expect(again.body.upload.method).toBe('post');
+    expect(again.body.upload.fields.key).toBe(first.body.upload.fields.key);
+    expect(await Media.countDocuments()).toBe(1);
+  });
+
+  it('keeps the multipart upload so parts already sent are not lost', async () => {
+    const first = await startUpload(auth, big);
+    const [upload] = [...store.uploads.values()];
+    upload!.parts.set(1, { bytes: 8 * MB, data: MP4 });
+
+    const again = await startUpload(auth, big);
+    expect(again.body.media.id).toBe(first.body.media.id);
+    expect(again.body.upload).toMatchObject({ method: 'multipart', part_count: 6 });
+    expect(store.uploads.size).toBe(1);
+    const parts = await request(app)
+      .get(`/api/v1/media/${first.body.media.id as string}/parts`)
+      .set('Authorization', auth);
+    expect(parts.body.parts).toEqual([{ part_number: 1, bytes: 8 * MB }]);
+  });
+
+  it('says complete when the file already finished', async () => {
+    const first = await startUpload(auth, small);
+    store.objects.set(first.body.upload.fields.key, JPEG);
+    await complete(auth, first.body.media.id);
+
+    const again = await startUpload(auth, small);
+    expect(again.body.upload).toEqual({ method: 'complete' });
+    expect(again.body.media).toMatchObject({ id: first.body.media.id, status: 'ready' });
+  });
+
+  it('starts over for a different file or an expired upload', async () => {
+    const first = await startUpload(auth, small);
+    const changed = await startUpload(auth, { ...small, bytes: 40 });
+    expect(changed.body.media.id).not.toBe(first.body.media.id);
+    expect(await Media.countDocuments()).toBe(1);
+
+    await Media.updateMany({}, { $set: { upload_expires_at: new Date(Date.now() - 1000) } });
+    const expired = await startUpload(auth, { ...small, bytes: 40 });
+    expect(expired.body.media.id).not.toBe(changed.body.media.id);
+    expect(await Media.countDocuments()).toBe(1);
+  });
+
+  it('is scoped to the owner and validated', async () => {
+    const first = await startUpload(auth, small);
+    const other = await signUp('someone.else');
+    const theirs = await startUpload(other, small);
+    expect(theirs.body.media.id).not.toBe(first.body.media.id);
+
+    const bad = await startUpload(auth, { ...small, client_upload_id: 'no spaces!' });
+    expect(bad.status).toBe(400);
   });
 });
 

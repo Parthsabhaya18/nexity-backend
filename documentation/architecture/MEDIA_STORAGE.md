@@ -88,21 +88,25 @@ After a failure the app resumes with `GET /media/:id/parts` and sends only the m
 - Use `pickFromLibrary(purpose, { kind?, limit? })` or `captureWithCamera(purpose, kind)`, then `useMediaUpload(purpose).start(files)`; it resolves with assets in the same order (carousel order).
 - The file is sent as `{ uri, type, name }` from its `file://` / `content://` URI — never read into base64 or JS memory. Policy fields go **before** the file (S3 ignores fields after `file`).
 - **Images** are resized on the device (long edge: avatar 640, post 1440, story/reel 1920, message 1600) and re-encoded as JPEG at quality 0.8. iOS HEIC is exported as JPEG and MOV as MP4.
-- **Video** over 10 MB is compressed on the device with `react-native-compressor` (`auto`, MP4) to a long edge of 1920 px (1080p, ~2–3.5 Mbps), or 1280 px (720p) for messages. If compression fails, the original file is uploaded instead of showing an error.
+- **Edited photos** (Stories canvas, filters): `bakeImage(file, { ratio, transform, matrix })` renders the final photo on the device with Skia — upright copy first (HEIC → JPEG, EXIF rotation applied), then fit over a blurred copy or fill, zoom/pan, filter and adjustments — at most **1080 px wide** (Stories 1080×1920) as JPEG 0.8, then uploads it like any other file.
+- **Video** over 10 MB is compressed on the device with `react-native-compressor` (`auto`, MP4) to a long edge of 1920 px (1080p, ~2–3.5 Mbps), or 1280 px (720p) for messages. If compression fails, the original file is used, as long as it is within the size limit.
 - **Instagram limits** (`MEDIA_RULES` / `MAX_ITEMS` in both `media.rules.ts` and `mediaRules.ts`):
 
-  | Purpose | Kinds | Max items per pick | Max video length |
-  |---|---|---|---|
-  | `avatar` | Photo | 1 | – |
-  | `post` | Photo, video | 20 (carousel) | 60 s per video (longer → share as a reel) |
-  | `reel` | Video | 1 | 3 min |
-  | `story` | Photo, video | 10 | 60 s (photos show for 5 s) |
-  | `message` | Photo, video | 10 | No limit |
+  | Purpose | Kinds | Max items per pick | Max file size | Max video length |
+  |---|---|---|---|---|
+  | `avatar` | Photo | 1 | 10 MB | – |
+  | `post` | Photo, video | 20 (carousel) | Photo 10 MB, video 200 MB | 2 min per video |
+  | `reel` | Video | 1 | 200 MB | 2 min |
+  | `story` | Photo, video | 10 | 200 MB | 2 min (photos show for 5 s) |
+  | `message` | Photo, video | 10 | Photo 10 MB, video 200 MB | No limit |
 
-  Length is checked after picking (and read from the file when the picker omits it), before compression, with 1 s of tolerance. The camera stops recording at the limit (`durationLimit`). The server rejects a declared `duration_ms` over the limit with `400 MEDIA_TOO_LONG` (`details.max_duration_ms`). Size is never a reason to refuse a file. Item counts are enforced again by the post, story and message endpoints.
+  Length is checked after picking (and read from the file when the picker omits it), before compression, with 1 s of tolerance. The camera stops recording at the limit (`durationLimit`). The server rejects a declared `duration_ms` over the limit with `400 MEDIA_TOO_LONG` (`details.max_duration_ms`). Size is checked on the compressed file just before upload ("Photos / Videos can be up to N MB") and again by the server (`400 MEDIA_TOO_LARGE`, `details.max_bytes`) when the upload starts, by S3 during the transfer, and on the stored object at `complete`. Item counts are enforced again by the post, story and message endpoints.
 - Progress: processing (images 5%, videos 40%), then the S3 transfer, then 5% verification. `onPhase` reports `processing` / `uploading`. Two files upload in parallel.
 - **Large files**: the exact size is read from disk, then each part is cut natively into `CacheDir/nexity-upload/` with `react-native-blob-util` (`fs.slice`) and streamed with `fetch(PUT, url, wrap(path))` — never through JS memory. Each part is retried up to 6 times over about a minute (network errors, 5xx, expired URL → fresh URL). If S3 lost the upload (`UPLOAD_EXPIRED`), the next attempt starts a new one.
-- Cancel aborts the request and releases the reservation; `retryFailed()` re-uploads only failed or cancelled files, **reusing the compressed file and resuming multipart uploads** instead of starting again.
+- **Retry with backoff**: `POST /media/uploads`, the S3 POST and `complete` are each retried on network errors, `429` and `5xx` after 1, 2, 4 and 8 s (about 15 s) before the file shows as failed.
+- **`client_upload_id`**: every file gets a device-generated id (`cu-…`, kept on `UploadItem.clientUploadId`) sent with `POST /media/uploads`. Sending it again for the same file returns the same media (`resumed: true`): a fresh POST for the same key, the same multipart upload (the app then lists parts S3 already has), or `upload.method: "complete"` when it already finished. A different size/type or an expired reservation starts over. Cancelling or a permanent failure releases the id; the next try gets a new one.
+- **Resume after an app restart**: before any network work the file is written to an on-disk journal (`DocumentDir/nexity-upload-journal.json`) and the compressed copy is moved to `DocumentDir/nexity-pending-uploads/` (outside the swept cache folders). `useMediaUpload(purpose).resumePending()` finishes this purpose's interrupted uploads without compressing again; `pendingUploads(purpose)` lists them. Entries are removed on success, cancel or a permanent failure, and `sweepUploadJournal()` drops entries older than 24 h (the server reservation) or whose files are gone at startup.
+- Cancel aborts the request, releases the reservation and forgets the journal entry; `retryFailed()` re-uploads only failed or cancelled files, **reusing the compressed file and resuming multipart uploads** instead of starting again.
 - **Temp files**: part slices are deleted right after each part; the compressed copy is deleted when the upload succeeds, or when the batch is replaced, `reset()`, or the screen unmounts. Originals in the gallery are never deleted. At startup `sweepUploadCache()` removes leftovers from earlier launches (Android cache: picker `rn_image_picker_lib_temp_*` and compressor `<uuid>.<ext>` files; iOS: media files in the app `tmp/`). Files from the current launch are never touched, so future drafts must be saved outside these folders.
 
 ## API
@@ -117,7 +121,7 @@ Rate limit: 150 per 15 minutes per account; at most 30 unfinished uploads at onc
 { "purpose": "post", "content_type": "image/jpeg", "bytes": 482113, "width": 1080, "height": 1350 }
 ```
 
-`width`, `height` and `duration_ms` are optional hints; invalid values are dropped, never rejected.
+`width`, `height` and `duration_ms` are optional hints; invalid values are dropped, never rejected. `client_upload_id` (optional, `[\w-]{8,64}`, unique per owner) makes the call idempotent: for the same file it returns the existing media with `"resumed": true` and either a new presigned POST for the same key, the existing multipart ticket, or `{ "method": "complete" }` when the media is already `ready`. Two concurrent calls with the same id get the same media.
 
 **`201`**
 
@@ -177,6 +181,13 @@ See [TECH_STACK.md](TECH_STACK.md#media-limits-default). Server and app share th
 Without `s3:ListBucket`, S3 answers `403` instead of `404` for a missing object, so "file not received" checks fail with a server error instead of `UPLOAD_NOT_FOUND`.
 
 4. Optional: a lifecycle rule to abort incomplete multipart uploads after 1 day.
+5. Optional safety net: a lifecycle rule expiring objects under `media/stories/` after 2 days. S3 lifecycle works in whole days, so the API's own cleanup (below) is what removes stories on time.
+
+## Story expiry
+
+Stories live for **24 hours** (`expires_at = created_at + 24 h`). From that moment every story endpoint treats them as gone (tray, view, like, message, vote, reply and viewers return `404` or leave them out), and the app drops them from the tray every minute without a refresh.
+
+The API process runs `purgeExpiredStories` every **5 minutes** (`backend/src/modules/stories/story.cleanup.ts`, started with the server). For each expired story it deletes the file from S3, then the media row, views, likes, poll votes, question answers and story messages, and the story last, so a failure is retried on the next run. It also deletes story uploads older than 24 hours that never became a story. Deleting a story by hand removes its S3 file the same way. Signed view URLs stop working once the object is gone.
 
 ## Security
 

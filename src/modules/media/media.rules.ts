@@ -31,7 +31,7 @@ const MB = 1024 * 1024;
 const GB = 1024 * MB;
 
 type KindRule = {
-  /** Safety ceiling; the app compresses first, so real files never reach it. */
+  /** Largest file accepted, checked when the upload starts and again on the stored object. */
   maxBytes: number;
   /** Longest video allowed, matching Instagram; `null` means no limit. */
   maxDurationMs?: number | null;
@@ -43,19 +43,27 @@ export const VIDEO_MAX_MS = 120 * SECOND;
 /** Device metadata rounds durations, so a 3:00 reel may report 3:00.4. */
 export const DURATION_TOLERANCE_MS = SECOND;
 
+export const IMAGE_MAX_BYTES = 10 * MB;
+export const VIDEO_MAX_BYTES = 200 * MB;
+/** Story photos share the video ceiling. */
+export const STORY_IMAGE_MAX_BYTES = 200 * MB;
+
 /**
- * Instagram's limits. S3 POST uploads cap at 5 GB.
+ * Size and length limits per purpose.
  * Keep in sync with `frontend/src/features/media/mediaRules.ts` and MEDIA_STORAGE.md.
  */
-const IMAGE: KindRule = { maxBytes: 50 * MB };
-const video = (maxDurationMs: number | null): KindRule => ({ maxBytes: 4 * GB, maxDurationMs });
+const IMAGE: KindRule = { maxBytes: IMAGE_MAX_BYTES };
+const video = (maxDurationMs: number | null): KindRule => ({
+  maxBytes: VIDEO_MAX_BYTES,
+  maxDurationMs,
+});
 
 export const MEDIA_RULES: Record<MediaPurpose, Partial<Record<MediaKind, KindRule>>> = {
-  avatar: { image: { maxBytes: 20 * MB } },
+  avatar: { image: IMAGE },
   /** Posts, reels and stories all stop at two minutes. */
   post: { image: IMAGE, video: video(VIDEO_MAX_MS) },
   reel: { video: video(VIDEO_MAX_MS) },
-  story: { image: IMAGE, video: video(VIDEO_MAX_MS) },
+  story: { image: { maxBytes: STORY_IMAGE_MAX_BYTES }, video: video(VIDEO_MAX_MS) },
   message: { image: IMAGE, video: video(null) },
 };
 
