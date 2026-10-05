@@ -1,7 +1,17 @@
 import mongoose, { type InferSchemaType, type Types } from 'mongoose';
 
 export const CONVERSATION_TYPES = ['direct', 'group'] as const;
-export const MESSAGE_TYPES = ['text', 'image', 'gif', 'sticker', 'voice', 'system'] as const;
+export const MESSAGE_TYPES = [
+  'text',
+  'image',
+  'video',
+  /** Several photos / videos sent together, shown as one stack. */
+  'album',
+  'gif',
+  'sticker',
+  'voice',
+  'system',
+] as const;
 
 /** Per-participant state. Read receipts and unread counts live here, not on every message. */
 const memberSchema = new mongoose.Schema(

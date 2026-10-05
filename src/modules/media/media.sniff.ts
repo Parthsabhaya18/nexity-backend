@@ -33,6 +33,7 @@ export function detectContentType(b: Uint8Array): string | null {
       if (HEIC_BRANDS.has(brand)) return 'image/heic';
       if (HEIF_BRANDS.has(brand)) return 'image/heif';
       if (brand === 'qt  ') return 'video/quicktime';
+      if (brand === 'M4A ' || brand === 'M4B ') return 'audio/mp4';
       if (brand === 'avif' || brand === 'avis') return null;
       return 'video/mp4';
     }
@@ -47,6 +48,8 @@ const FAMILY: Record<string, string> = {
   'image/heif': 'heif',
   'video/mp4': 'isobmff-video',
   'video/quicktime': 'isobmff-video',
+  /** Android's recorder writes audio-only files with generic `isom` / `mp42` brands. */
+  'audio/mp4': 'isobmff-video',
 };
 
 export function isCompatibleType(declared: string, detected: string | null) {

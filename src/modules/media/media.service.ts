@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { env } from '../../config/env';
 import { ApiError } from '../../utils/ApiError';
 import { logger } from '../../utils/logger';
+import { Message } from '../messages/message.model';
 import { Post } from '../posts/post.model';
 import type { UserDoc } from '../users/user.model';
 import { Media, type MediaDoc } from './media.model';
@@ -58,11 +59,17 @@ export async function toMediaDto(media: MediaDoc) {
   };
 }
 
+const KIND_LABEL: Record<MediaKind, string> = {
+  image: 'Photos',
+  video: 'Videos',
+  audio: 'Voice messages',
+};
+
 function ruleFor(purpose: MediaPurpose, kind: MediaKind) {
   const rule = MEDIA_RULES[purpose][kind];
   if (!rule) {
     throw ApiError.badRequest(
-      `${kind === 'image' ? 'Photos' : 'Videos'} can't be used here.`,
+      `${KIND_LABEL[kind]} can't be used here.`,
       { purpose, kind },
       'MEDIA_KIND_NOT_ALLOWED',
     );
@@ -83,13 +90,14 @@ export async function createUpload(user: UserDoc, input: CreateUploadInput) {
   }
   const maxDuration = rule.maxDurationMs;
   if (
-    kind === 'video' &&
+    kind !== 'image' &&
     maxDuration &&
     input.duration_ms &&
     input.duration_ms > maxDuration + DURATION_TOLERANCE_MS
   ) {
+    const label = kind === 'audio' ? KIND_LABEL.audio : PURPOSE_LABEL[input.purpose];
     throw ApiError.badRequest(
-      `This video is too long. ${PURPOSE_LABEL[input.purpose]} can be up to ${formatDuration(maxDuration)}.`,
+      `This ${kind === 'audio' ? 'voice message' : 'video'} is too long. ${label} can be up to ${formatDuration(maxDuration)}.`,
       { max_duration_ms: maxDuration },
       'MEDIA_TOO_LONG',
     );
@@ -235,7 +243,7 @@ function newMediaFields(
     bytes: input.bytes,
     width: input.width ?? null,
     height: input.height ?? null,
-    duration_ms: kind === 'video' ? (input.duration_ms ?? null) : null,
+    duration_ms: kind === 'image' ? null : (input.duration_ms ?? null),
     client_upload_id: input.client_upload_id ?? null,
     upload_expires_at: expiresAt,
   };
@@ -384,6 +392,13 @@ export async function deleteMedia(user: UserDoc, id: string) {
   const media = await findOwned(user, id);
   if (await Post.exists({ 'media.media_id': media._id })) {
     throw ApiError.conflict('This file is part of a post.', 'MEDIA_IN_USE');
+  }
+  if (
+    await Message.exists({
+      $or: [{ 'media.media_id': media._id }, { 'media_items.media_id': media._id }],
+    })
+  ) {
+    throw ApiError.conflict('This file was sent in a message.', 'MEDIA_IN_USE');
   }
   await discard(media);
 }

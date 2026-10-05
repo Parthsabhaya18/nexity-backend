@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { MAX_ITEMS } from '../media/media.rules';
 import { MESSAGE_MAX_LENGTH } from './message.model';
 
 export const objectIdSchema = z.string().regex(/^[a-f\d]{24}$/i, 'Invalid id.');
@@ -52,13 +53,26 @@ export const sendMessageSchema = z
       .max(MESSAGE_MAX_LENGTH, `Messages can be at most ${MESSAGE_MAX_LENGTH} characters.`)
       .default(''),
     media_id: objectIdSchema.nullable().optional(),
+    /** Photos / videos sent together as one album, in order. */
+    media_ids: z
+      .array(objectIdSchema)
+      .min(1)
+      .max(MAX_ITEMS.message, `You can send up to ${MAX_ITEMS.message} at once.`)
+      .refine((ids) => new Set(ids).size === ids.length, 'Each file can be sent once.')
+      .nullable()
+      .optional(),
     gif: gifSchema.nullable().optional(),
     reply_to_id: objectIdSchema.nullable().optional(),
+    reply_to_index: z.number().int().min(0).max(MAX_ITEMS.message - 1).nullable().optional(),
     client_message_id: z.uuid({ error: 'client_message_id must be a UUID.' }),
   })
-  .refine((v) => v.body.length > 0 || v.media_id || v.gif, {
+  .refine((v) => v.body.length > 0 || v.media_id || v.media_ids?.length || v.gif, {
     path: ['body'],
     message: 'Type a message.',
+  })
+  .refine((v) => [v.media_id, v.media_ids?.length, v.gif].filter(Boolean).length <= 1, {
+    path: ['gif'],
+    message: 'Send a GIF or files, not both.',
   });
 
 export const markReadSchema = z.object({ message_id: objectIdSchema.optional() });

@@ -2,6 +2,9 @@ import mongoose, { Types } from 'mongoose';
 
 import { emitToUser, isOnline } from '../../realtime/io';
 import { ApiError } from '../../utils/ApiError';
+import { Media } from '../media/media.model';
+import type { MediaKind } from '../media/media.rules';
+import { viewUrl } from '../media/media.storage';
 import {
   PUBLIC_USER_FIELDS,
   type PublicUserSource,
@@ -59,8 +62,54 @@ function participantDto(id: string, users: UserMap) {
 
 type ReplySource = Pick<
   MessageAttrs,
-  '_id' | 'sender_id' | 'type' | 'body' | 'deleted_at' | 'edited_at'
+  '_id' | 'sender_id' | 'type' | 'body' | 'deleted_at' | 'edited_at' | 'media' | 'media_items'
 >;
+
+type MediaSource = NonNullable<MessageAttrs['media']>;
+
+function mediaDto(m: MediaSource) {
+  return {
+    provider: m.provider,
+    provider_id: m.provider_id ?? null,
+    media_id: m.media_id ? m.media_id.toString() : null,
+    url: m.url,
+    preview_url: m.preview_url ?? null,
+    width: m.width ?? null,
+    height: m.height ?? null,
+    duration_ms: m.duration_ms ?? null,
+  };
+}
+
+/** Thumbnail for a quote: the replied-to photo / video, or the first of an album with its size. */
+function quotedMedia(reply: ReplySource, index: number | null | undefined) {
+  if (reply.deleted_at) return null;
+  const items = reply.media_items ?? [];
+  if (items.length) {
+    const picked = index != null ? items[index] : undefined;
+    const shown = picked ?? items[0]!;
+    const card = (m: MediaSource) => ({
+      url: m.preview_url ?? m.url,
+      kind: m.duration_ms != null ? ('video' as const) : ('image' as const),
+    });
+    return {
+      ...card(shown),
+      count: picked ? 1 : items.length,
+      next_url: picked ? null : (items[1]?.preview_url ?? items[1]?.url ?? null),
+      // The same three cards the album bubble shows.
+      stack: picked ? [] : items.slice(0, 3).map(card),
+    };
+  }
+  if (reply.media && (reply.type === 'image' || reply.type === 'video' || reply.type === 'gif' || reply.type === 'sticker')) {
+    return {
+      url: reply.media.preview_url ?? reply.media.url,
+      kind: reply.type === 'video' ? ('video' as const) : ('image' as const),
+      count: 1,
+      next_url: null,
+      stack: [],
+    };
+  }
+  return null;
+}
 
 type ReactionSource = { user_id: Types.ObjectId; emoji: string; created_at?: Date | null };
 
@@ -87,20 +136,10 @@ export function toMessageDto(m: MessageAttrs, replies: Map<string, ReplySource> 
     sender_id: m.sender_id.toString(),
     type: m.type,
     body: deleted ? '' : m.body,
-    media:
-      !deleted && m.media
-        ? {
-            provider: m.media.provider,
-            provider_id: m.media.provider_id ?? null,
-            media_id: m.media.media_id ? m.media.media_id.toString() : null,
-            url: m.media.url,
-            preview_url: m.media.preview_url ?? null,
-            width: m.media.width ?? null,
-            height: m.media.height ?? null,
-            duration_ms: m.media.duration_ms ?? null,
-          }
-        : null,
+    media: !deleted && m.media ? mediaDto(m.media) : null,
+    media_items: deleted ? [] : (m.media_items ?? []).map(mediaDto),
     reply_to_id: m.reply_to_id ? m.reply_to_id.toString() : null,
+    reply_to_index: m.reply_to_index ?? null,
     /** Quoted preview so the bubble can render without fetching the original. */
     reply_to: reply
       ? {
@@ -110,6 +149,7 @@ export function toMessageDto(m: MessageAttrs, replies: Map<string, ReplySource> 
           body: reply.deleted_at ? '' : reply.body.slice(0, PREVIEW_LENGTH),
           is_deleted: Boolean(reply.deleted_at),
           is_edited: Boolean(reply.edited_at),
+          media: quotedMedia(reply, m.reply_to_index),
         }
       : null,
     client_message_id: m.client_message_id,
@@ -127,11 +167,67 @@ async function toMessageDtos(rows: MessageAttrs[]) {
   const replyIds = [...new Set(rows.flatMap((m) => (m.reply_to_id ? [m.reply_to_id.toString()] : [])))];
   const replies = replyIds.length
     ? await Message.find({ _id: { $in: replyIds } })
-        .select('_id sender_id type body deleted_at edited_at')
+        .select('_id sender_id type body deleted_at edited_at media media_items')
         .lean<ReplySource[]>()
     : [];
-  const byId = new Map(replies.map((r) => [r._id.toString(), r]));
-  return rows.map((m) => toMessageDto(m, byId));
+  const signedReplies = await Promise.all(replies.map(withFreshMediaUrl));
+  const byId = new Map(signedReplies.map((r) => [r._id.toString(), r]));
+  const signed = await Promise.all(rows.map(withFreshMediaUrl));
+  return signed.map((m) => toMessageDto(m, byId));
+}
+
+async function freshUrl<T extends MediaSource>(m: T): Promise<T> {
+  return m.provider === 'upload' && m.key ? { ...m, url: await viewUrl(m.key) } : m;
+}
+
+async function withFreshMediaUrl<
+  T extends Pick<MessageAttrs, 'media' | 'media_items' | 'deleted_at'>,
+>(m: T): Promise<T> {
+  if (m.deleted_at) return m;
+  return {
+    ...m,
+    media: m.media ? await freshUrl(m.media) : m.media,
+    media_items: m.media_items?.length
+      ? await Promise.all(m.media_items.map(freshUrl))
+      : m.media_items,
+  };
+}
+
+const MESSAGE_TYPE_OF: Record<MediaKind, 'image' | 'video' | 'voice'> = {
+  image: 'image',
+  video: 'video',
+  audio: 'voice',
+};
+
+/** Keeps the index only when it points at an item of the quoted album. */
+async function validReplyIndex(replyToId: string, index: number | null | undefined) {
+  if (index == null) return null;
+  const target = await Message.findById(replyToId).select('media_items').lean<Pick<MessageAttrs, 'media_items'>>();
+  return target && index < (target.media_items?.length ?? 0) ? index : null;
+}
+
+/** A finished upload of mine for messages, ready to attach. */
+async function attachableMedia(userId: string, mediaId: string) {
+  const media = await Media.findOne({ _id: mediaId, owner_id: oid(userId) }).lean();
+  if (!media || media.status !== 'ready' || media.purpose !== 'message') {
+    throw ApiError.badRequest(
+      "That file didn't finish uploading. Please try again.",
+      { field: 'media_id' },
+      'INVALID_MEDIA',
+    );
+  }
+  return {
+    type: MESSAGE_TYPE_OF[media.kind],
+    media: {
+      provider: 'upload' as const,
+      media_id: media._id,
+      key: media.key,
+      url: await viewUrl(media.key),
+      width: media.width ?? null,
+      height: media.height ?? null,
+      duration_ms: media.duration_ms ?? null,
+    },
+  };
 }
 
 const previewOf = (m: Pick<MessageAttrs, 'body' | 'deleted_at'>) =>
@@ -344,14 +440,6 @@ export async function listMessages(
 
 export async function sendMessage(userId: string, conversationId: string, input: SendMessageInput) {
   const convo = await requireMembership(conversationId, userId);
-  if (input.media_id) {
-    throw ApiError.badRequest(
-      'Photo messages are coming soon.',
-      undefined,
-      'MEDIA_NOT_SUPPORTED',
-    );
-  }
-
   const me = oid(userId);
   const duplicateOf = async () => {
     const existing = await Message.findOne({
@@ -387,23 +475,39 @@ export async function sendMessage(userId: string, conversationId: string, input:
   }
 
   const gif = input.gif;
+  const ids = input.media_ids ?? (input.media_id ? [input.media_id] : []);
+  const uploads = await Promise.all(ids.map((id) => attachableMedia(userId, id)));
+  if (uploads.length > 1 && uploads.some((u) => u.type === 'voice')) {
+    throw ApiError.badRequest(
+      'Voice messages are sent one at a time.',
+      { field: 'media_ids' },
+      'INVALID_MEDIA',
+    );
+  }
+  const upload = uploads.length === 1 ? uploads[0]! : null;
+  const album = uploads.length > 1 ? uploads.map((u) => u.media) : [];
+  const replyIndex = input.reply_to_id ? await validReplyIndex(input.reply_to_id, input.reply_to_index) : null;
   let message: MessageAttrs;
   try {
     const doc = await Message.create({
       conversation_id: convo._id,
       sender_id: me,
-      type: gif ? gif.kind : 'text',
+      type: album.length ? 'album' : upload ? upload.type : gif ? gif.kind : 'text',
       body: input.body,
-      media: gif
-        ? {
-            provider: 'giphy',
-            provider_id: gif.id,
-            url: gif.url,
-            preview_url: gif.preview_url ?? null,
-            width: gif.width,
-            height: gif.height,
-          }
-        : null,
+      media_items: album,
+      reply_to_index: replyIndex,
+      media: upload
+        ? upload.media
+        : gif
+          ? {
+              provider: 'giphy',
+              provider_id: gif.id,
+              url: gif.url,
+              preview_url: gif.preview_url ?? null,
+              width: gif.width,
+              height: gif.height,
+            }
+          : null,
       reply_to_id: input.reply_to_id ?? null,
       client_message_id: input.client_message_id,
     });

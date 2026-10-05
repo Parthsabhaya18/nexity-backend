@@ -84,7 +84,7 @@ export async function createStory(
     }
   }
   const media = await Media.findOne({ _id: input.media_id, owner_id: author._id });
-  if (!media || media.status !== 'ready' || media.purpose !== 'story') {
+  if (!media || media.status !== 'ready' || media.purpose !== 'story' || media.kind === 'audio') {
     throw ApiError.badRequest(
       "That story didn't finish uploading. Please try again.",
       { field: 'media_id' },
