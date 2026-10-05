@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
+import { Types } from 'mongoose';
 import { describe, expect, it } from 'vitest';
 
+import { Media } from '../src/modules/media/media.model';
 import { Message } from '../src/modules/messages/message.model';
 import { api, openChat, person, send, useChatHarness } from './chatHarness';
 
@@ -14,6 +16,36 @@ const GIF = {
   width: 200,
   height: 150,
 };
+
+async function readyMedia(
+  ownerId: string,
+  kind: 'image' | 'video' | 'audio',
+  overrides: Partial<{ status: 'pending' | 'ready'; purpose: 'message' | 'post' }> = {},
+) {
+  const _id = new Types.ObjectId();
+  const ext = { image: 'jpg', video: 'mp4', audio: 'm4a' }[kind];
+  const media = await Media.create({
+    _id,
+    owner_id: ownerId,
+    purpose: 'message',
+    kind,
+    key: `media/messages/${ownerId}/${_id.toHexString()}.${ext}`,
+    content_type: { image: 'image/jpeg', video: 'video/mp4', audio: 'audio/mp4' }[kind],
+    bytes: 1024,
+    width: kind === 'audio' ? null : 640,
+    height: kind === 'audio' ? null : 480,
+    duration_ms: kind === 'image' ? null : 4200,
+    status: 'ready',
+    upload_expires_at: new Date(Date.now() + 60_000),
+    ...overrides,
+  });
+  return {
+    id: media.id as string,
+    key: media.key,
+    width: media.width,
+    duration_ms: media.duration_ms,
+  };
+}
 
 async function pair() {
   const riya = await person('riya.writes');
@@ -65,11 +97,83 @@ describe('sending', () => {
     expect((await api(arjun).get('/conversations')).body.data[0].unread_count).toBe(1);
   });
 
-  it('rejects photo uploads until media ships', async () => {
+  it('rejects a media id that is not a finished upload of mine', async () => {
+    const { riya, arjun, id } = await pair();
+    const unknown = await send(riya, id, { media_id: '0123456789abcdef01234567' });
+    expect(unknown.status).toBe(400);
+    expect(unknown.body.error.code).toBe('INVALID_MEDIA');
+
+    const someoneElses = await readyMedia(arjun.id, 'image');
+    const stolen = await send(riya, id, { media_id: someoneElses.id });
+    expect(stolen.body.error.code).toBe('INVALID_MEDIA');
+
+    const pending = await readyMedia(riya.id, 'image', { status: 'pending' });
+    expect((await send(riya, id, { media_id: pending.id })).body.error.code).toBe('INVALID_MEDIA');
+
+    const forAPost = await readyMedia(riya.id, 'image', { purpose: 'post' });
+    expect((await send(riya, id, { media_id: forAPost.id })).body.error.code).toBe('INVALID_MEDIA');
+  });
+
+  it('sends photos, videos and voice notes from finished uploads', async () => {
+    const { riya, arjun, id } = await pair();
+    const expected = { image: 'image', video: 'video', audio: 'voice' } as const;
+    for (const kind of ['image', 'video', 'audio'] as const) {
+      const media = await readyMedia(riya.id, kind);
+      const res = await send(riya, id, { media_id: media.id });
+      expect(res.status).toBe(201);
+      expect(res.body.type).toBe(expected[kind]);
+      expect(res.body.media).toMatchObject({
+        provider: 'upload',
+        media_id: media.id,
+        width: media.width,
+        duration_ms: media.duration_ms,
+      });
+      expect(res.body.media.url).toContain(media.key);
+      expect(res.body.media.key).toBeUndefined();
+    }
+    const thread = await api(arjun).get(`/conversations/${id}/messages`);
+    expect(thread.body.data.map((m: { type: string }) => m.type)).toEqual([
+      'voice',
+      'video',
+      'image',
+    ]);
+  });
+
+  it('sends several photos and videos as one album, in order', async () => {
+    const { riya, arjun, id } = await pair();
+    const files = [
+      await readyMedia(riya.id, 'image'),
+      await readyMedia(riya.id, 'video'),
+      await readyMedia(riya.id, 'image'),
+    ];
+    const res = await send(riya, id, { media_ids: files.map((f) => f.id) });
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ type: 'album', media: null });
+    expect(res.body.media_items.map((m: { media_id: string }) => m.media_id)).toEqual(
+      files.map((f) => f.id),
+    );
+    expect(res.body.media_items[1].url).toContain(files[1]!.key);
+
+    const inbox = await api(arjun).get('/conversations');
+    expect(inbox.body.data[0].last_message).toMatchObject({ type: 'album' });
+  });
+
+  it('refuses voice notes, repeats and stolen files in an album', async () => {
+    const { riya, arjun, id } = await pair();
+    const photo = await readyMedia(riya.id, 'image');
+    const voice = await readyMedia(riya.id, 'audio');
+    const theirs = await readyMedia(arjun.id, 'image');
+    expect((await send(riya, id, { media_ids: [photo.id, voice.id] })).status).toBe(400);
+    expect((await send(riya, id, { media_ids: [photo.id, photo.id] })).status).toBe(400);
+    expect((await send(riya, id, { media_ids: [photo.id, theirs.id] })).status).toBe(400);
+    expect(await Message.countDocuments()).toBe(0);
+  });
+
+  it('refuses a GIF and a file in the same message', async () => {
     const { riya, id } = await pair();
-    const res = await send(riya, id, { media_id: '0123456789abcdef01234567' });
+    const media = await readyMedia(riya.id, 'image');
+    const res = await send(riya, id, { media_id: media.id, gif: GIF });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('MEDIA_NOT_SUPPORTED');
   });
 
   it('does not let outsiders post', async () => {
@@ -143,6 +247,41 @@ describe('replies', () => {
 
     const page = await api(arjun).get(`/conversations/${id}/messages`);
     expect(page.body.data[0].reply_to).toMatchObject({ is_deleted: true, body: '' });
+  });
+
+  it('quotes a whole album or one photo of it with a thumbnail', async () => {
+    const { riya, arjun, id } = await pair();
+    const files = [await readyMedia(riya.id, 'image'), await readyMedia(riya.id, 'video')];
+    const album = await send(riya, id, { media_ids: files.map((f) => f.id) });
+
+    const whole = await send(arjun, id, { body: 'nice', reply_to_id: album.body.id });
+    expect(whole.body.reply_to_index).toBeNull();
+    expect(whole.body.reply_to.media).toMatchObject({ kind: 'image', count: 2 });
+    expect(whole.body.reply_to.media.url).toContain(files[0]!.key);
+    expect(whole.body.reply_to.media.stack.map((c: { kind: string }) => c.kind)).toEqual([
+      'image',
+      'video',
+    ]);
+
+    const one = await send(arjun, id, {
+      body: 'this one',
+      reply_to_id: album.body.id,
+      reply_to_index: 1,
+    });
+    expect(one.body.reply_to_index).toBe(1);
+    expect(one.body.reply_to.media).toMatchObject({ kind: 'video', count: 1, next_url: null });
+    expect(one.body.reply_to.media.url).toContain(files[1]!.key);
+
+    const outOfRange = await send(arjun, id, {
+      body: '?',
+      reply_to_id: album.body.id,
+      reply_to_index: 5,
+    });
+    expect(outOfRange.body.reply_to_index).toBeNull();
+
+    await api(riya).delete(`/conversations/${id}/messages/${album.body.id}`);
+    const page = await api(arjun).get(`/conversations/${id}/messages`);
+    expect(page.body.data[0].reply_to.media).toBeNull();
   });
 
   it('quotes GIFs by type', async () => {

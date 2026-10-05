@@ -8,13 +8,15 @@ export const EDIT_WINDOW_MS = 15 * 60_000;
 
 /**
  * `giphy`: GIF picked in the composer (no upload, URL from GIPHY's CDN).
- * `upload`: photo / voice note stored by the media service once it ships.
+ * `upload`: photo, video or voice note stored by the media service.
  */
 const messageMediaSchema = new mongoose.Schema(
   {
     provider: { type: String, enum: ['giphy', 'upload'], required: true },
     provider_id: { type: String, default: null },
     media_id: { type: mongoose.Schema.Types.ObjectId, default: null },
+    /** S3 key of an upload; `url` is re-signed from it on every read because signed URLs expire. */
+    key: { type: String, default: null },
     url: { type: String, required: true },
     preview_url: { type: String, default: null },
     width: { type: Number, default: null },
@@ -45,7 +47,11 @@ const messageSchema = new mongoose.Schema(
     type: { type: String, enum: MESSAGE_TYPES, default: 'text' },
     body: { type: String, default: '', trim: true, maxlength: MESSAGE_MAX_LENGTH },
     media: { type: messageMediaSchema, default: null },
+    /** Album items, in the order they were picked; `media` stays null for albums. */
+    media_items: { type: [messageMediaSchema], default: [] },
     reply_to_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null },
+    /** Replying to one photo or video of an album. */
+    reply_to_index: { type: Number, default: null },
     /** Generated on the device; makes retries idempotent and matches optimistic bubbles. */
     client_message_id: { type: String, required: true },
     reactions: { type: [reactionSchema], default: [] },

@@ -11,7 +11,7 @@ export const createUploadSchema = z.object({
     .string({ error: 'File type is required.' })
     .transform(normalizeContentType)
     .refine((v) => v in CONTENT_TYPES, {
-      message: 'This file type is not supported. Use JPG, PNG, WEBP, HEIC, MP4 or MOV.',
+      message: 'This file type is not supported. Use JPG, PNG, WEBP, HEIC, MP4, MOV or M4A.',
     }),
   bytes: z.number({ error: 'File size is required.' }).int().positive(),
   width: dimension,

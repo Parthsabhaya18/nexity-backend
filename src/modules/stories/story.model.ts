@@ -1,6 +1,6 @@
 import mongoose, { type HydratedDocument, type InferSchemaType } from 'mongoose';
 
-import { MEDIA_KINDS } from '../media/media.rules';
+import { VISUAL_KINDS } from '../media/media.rules';
 
 export const STORY_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -9,7 +9,7 @@ const storySchema = new mongoose.Schema(
     author_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     media_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Media', required: true },
     key: { type: String, required: true },
-    kind: { type: String, enum: MEDIA_KINDS, required: true },
+    kind: { type: String, enum: VISUAL_KINDS, required: true },
     width: { type: Number, default: null },
     height: { type: Number, default: null },
     duration_ms: { type: Number, default: null },

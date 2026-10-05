@@ -1,8 +1,10 @@
 export const MEDIA_PURPOSES = ['avatar', 'post', 'story', 'reel', 'message'] as const;
 export type MediaPurpose = (typeof MEDIA_PURPOSES)[number];
 
-export const MEDIA_KINDS = ['image', 'video'] as const;
+export const MEDIA_KINDS = ['image', 'video', 'audio'] as const;
 export type MediaKind = (typeof MEDIA_KINDS)[number];
+/** Kinds a post, story or reel item can be. */
+export const VISUAL_KINDS = ['image', 'video'] as const;
 
 /** Allowed MIME types and the file extension used for the S3 key. */
 export const CONTENT_TYPES: Record<string, { kind: MediaKind; ext: string }> = {
@@ -13,6 +15,8 @@ export const CONTENT_TYPES: Record<string, { kind: MediaKind; ext: string }> = {
   'image/heif': { kind: 'image', ext: 'heif' },
   'video/mp4': { kind: 'video', ext: 'mp4' },
   'video/quicktime': { kind: 'video', ext: 'mov' },
+  /** Voice notes: AAC in an MPEG-4 container (.m4a). */
+  'audio/mp4': { kind: 'audio', ext: 'm4a' },
 };
 
 /** Some Android pickers report non-standard MIME types. */
@@ -20,6 +24,9 @@ const CONTENT_TYPE_ALIASES: Record<string, string> = {
   'image/jpg': 'image/jpeg',
   'image/pjpeg': 'image/jpeg',
   'video/mov': 'video/quicktime',
+  'audio/m4a': 'audio/mp4',
+  'audio/x-m4a': 'audio/mp4',
+  'audio/aac': 'audio/mp4',
 };
 
 export function normalizeContentType(value: string) {
@@ -47,6 +54,9 @@ export const IMAGE_MAX_BYTES = 10 * MB;
 export const VIDEO_MAX_BYTES = 200 * MB;
 /** Story photos share the video ceiling. */
 export const STORY_IMAGE_MAX_BYTES = 200 * MB;
+export const VOICE_MAX_BYTES = 10 * MB;
+/** Longest voice message, like Instagram. Mirrored in the app's mediaRules.ts. */
+export const VOICE_MAX_MS = 60 * SECOND;
 
 /**
  * Size and length limits per purpose.
@@ -64,7 +74,11 @@ export const MEDIA_RULES: Record<MediaPurpose, Partial<Record<MediaKind, KindRul
   post: { image: IMAGE, video: video(VIDEO_MAX_MS) },
   reel: { video: video(VIDEO_MAX_MS) },
   story: { image: { maxBytes: STORY_IMAGE_MAX_BYTES }, video: video(VIDEO_MAX_MS) },
-  message: { image: IMAGE, video: video(null) },
+  message: {
+    image: IMAGE,
+    video: video(null),
+    audio: { maxBytes: VOICE_MAX_BYTES, maxDurationMs: VOICE_MAX_MS },
+  },
 };
 
 /** Most files one post, story batch or message can hold (enforced where they are created). */

@@ -1,6 +1,6 @@
 import mongoose, { type HydratedDocument, type InferSchemaType } from 'mongoose';
 
-import { MEDIA_KINDS } from '../media/media.rules';
+import { VISUAL_KINDS } from '../media/media.rules';
 import { CAPTION_MAX } from './caption';
 
 export const ALT_TEXT_MAX = 100;
@@ -13,7 +13,7 @@ const postMediaSchema = new mongoose.Schema(
   {
     media_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Media', required: true },
     key: { type: String, required: true },
-    kind: { type: String, enum: MEDIA_KINDS, required: true },
+    kind: { type: String, enum: VISUAL_KINDS, required: true },
     width: { type: Number, default: null },
     height: { type: Number, default: null },
     alt_text: { type: String, default: '', maxlength: ALT_TEXT_MAX },
