@@ -64,10 +64,11 @@ RootStack (native-stack)
 │   No Profile tab: own profile (MyProfile) opens from the avatar in the Home header.
 │
 │   Shared screens pushed inside any tab stack:
-│   MyProfile, PostDetail, UserProfile, Followers, HashtagFeed, ReelDetail,
+│   MyProfile, PostDetail, UserProfile, Followers, PostViewer, ReelDetail,
 │   Notifications, Inbox, ChatThread, SavedPosts, FollowRequests,
 │   Settings, PrivacySettings, AccountSettings, NotificationSettings,
-│   AppearanceSettings, BlockedAccounts, Groups, GroupDetail, AdminModeration
+│   AppearanceSettings, BlockedAccounts, Groups, GroupDetail, AdminModeration,
+│   DevComponents (debug builds only)
 │
 └── Modals (presented over tabs)
     ├── CreatePostStack   (fullScreenModal): CreatePostSelect → CreatePostCrop → CreatePostDetails
@@ -111,11 +112,16 @@ Email links (verify email, reset password) **must** use `https://nexity.com/...`
 
 ## Permissions
 
-Ask **only when the feature is used** (just-in-time), never at launch, and always with the phone’s **own** permission dialog first. No in-app explainer screen comes before it.
+Ask **only when the feature is used** (just-in-time), never at launch. The OS popup is **never shown cold**: our own explanation comes first (per [NEXITY_CONTENT_SOCIAL_FLOW.md §1](../modules/content-flow/NEXITY_CONTENT_SOCIAL_FLOW.md)).
 
-- **Story, Post, Reel** open straight on the in-app camera (`CaptureView`, built on `react-native-vision-camera`), like the prototype. Opening it asks for **Camera**, then **Microphone** (story and reel record video), then **Photos** for the recent-photos strip, each as the system dialog.
-- **Denied once** (Android can still ask): the camera area shows “Camera access is off” with **Try again**, which shows the system dialog again.
-- **Denied permanently** (Android “Don’t allow” twice / “Don’t ask again”, or any iOS deny): only now offer **Open Settings**. In the camera area it is a button; elsewhere it is one popup, **Not now** or **Open Settings** (`ensureAccess` → `showPermissionPrompt`).
+Shared building blocks (`react-native-permissions`), types `camera` | `photos` | `microphone` | `notifications`:
+
+- **`usePermission(type)`** (`src/features/permissions/usePermission.ts`) — live `status` (`granted` | `limited` | `denied` | `blocked` | `unavailable`), `request(action)`, `requestNow()`, `openSettings()`, `manage()` (Limited Photos).
+- **`request(action)`** — for a tap on an action (e.g. "open camera"): granted → runs `action` at once. Otherwise our **pre-permission sheet** (`PermissionSheet`, rendered by `PermissionHost` at the app root): icon, title, one-line reason, **Allow** / **Not now**. Allow → OS popup → granted: the sheet closes and `action` continues; denied (can ask again): the sheet turns into a friendly empty state with **Try again**; blocked: **Permission needed** with **Open Settings**. When the app returns to the foreground after Open Settings, the permission is re-checked and `action` continues by itself if it was turned on.
+- **`PermissionGate`** (`src/components/permissions/PermissionGate.tsx`) — wraps an area that needs access (camera preview, gallery grid). Its empty state *is* the explanation (icon, title, reason, **Allow**), so its button shows the OS popup directly; then **Try again**, then **Open Settings**. Turning access on in Settings shows the content as soon as the app is back in front. Limited Photos (iOS, Android 14 partial) shows a "selected photos only · **Manage**" bar.
+- Android `check` cannot tell "never asked" from "don't ask again"; a `blocked` answer from `request` is remembered for the session so the next tap goes straight to **Open Settings**.
+- Reason texts: Camera "Take photos and videos to share", Photos "Choose photos and videos to post", Microphone "Record sound with your videos", Notifications "Get notified about likes, follows and messages".
+- Older flows (`CaptureView`, `GalleryPicker`, `pickMedia`) still use `ensureAccess` / `showPermissionPrompt` (system dialog first); they move to `usePermission` / `PermissionGate` when those screens are rebuilt (content-flow prompts 4–6).
 - Open Settings goes to that permission’s own switch: Camera opens Camera, Microphone opens Microphone, Location opens Location, Photos opens Photos (Files and media on Android 12). If that page is missing, the app permission list, then the app info screen. On iOS, Settings → Nexity holds those switches.
 - Without Photos access the strip shows only the upload tile. The gallery button opens the system picker, which works without that permission.
 
@@ -125,7 +131,7 @@ Ask **only when the feature is used** (just-in-time), never at launch, and alway
 | Microphone (video recording) | `NSMicrophoneUsageDescription` | `RECORD_AUDIO` |
 | Photo library read (gallery picker) | `NSPhotoLibraryUsageDescription` (support **Limited** access) | API 33+: `READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO` (+ `READ_MEDIA_VISUAL_USER_SELECTED` on 34+); API ≤32: `READ_EXTERNAL_STORAGE` |
 | Save to gallery (download own media) | `NSPhotoLibraryAddUsageDescription` | API ≤28: `WRITE_EXTERNAL_STORAGE` |
-| Push notifications | Requested via `UNUserNotificationCenter` (no plist key) | API 33+: `POST_NOTIFICATIONS` |
+| Push notifications | Requested via `UNUserNotificationCenter` (no plist key; `Notifications` handler in the Podfile `setup_permissions`) | API 33+: `POST_NOTIFICATIONS` |
 | Location (optional "Add location" by GPS) | `NSLocationWhenInUseUsageDescription` | `ACCESS_COARSE_LOCATION` |
 
 Suggested usage strings (iOS):
@@ -146,7 +152,7 @@ Also always declare `INTERNET` (Android). Location is optional: typing a locatio
 | Haptics | Light impact on like, selection on tab/segment change (`react-native-haptic-feedback`) | Same, mapped to Android haptic constants |
 | Pull to refresh | `RefreshControl` (native spinner) | `RefreshControl` with `colors` from theme |
 | Action menus | Bottom sheet (•••) | Same bottom sheet (do not use native Android popup menus) |
-| Alerts / confirms | `Alert.alert` (destructive button style for Delete) | `Alert.alert` |
+| Alerts / confirms | `ConfirmDialog` (`destructive` for Delete); `Alert.alert` only where a native alert is required | Same |
 | Share | `Share.share({ url })` native share sheet | Same |
 | Fonts | Plus Jakarta Sans (bundled), scale with Dynamic Type | Same, scale with system font size |
 
@@ -157,8 +163,10 @@ General rules:
 - **Images:** cached image component (`@d11/react-native-fast-image`); request Cloudinary sizes that match the device width × pixel ratio.
 - **Touch targets:** at least 44×44 pt (iOS) / 48×48 dp (Android).
 - **Accessibility:** every icon button has `accessibilityLabel`; images use the post `alt_text`; support VoiceOver and TalkBack; respect Reduce Motion (skip heart burst and auto-advance animations).
-- **Loading:** skeletons (theme `skeleton` token) for first load, spinners only for actions.
-- **Toasts:** non-blocking toast at the top below the safe area.
+- **Loading:** skeletons (`SkeletonLoader`: `rect` / `circle` / `line`, theme `skeleton` + `skeletonHighlight` tokens, shared shimmer, off with Reduce Motion) for first load, spinners only for actions.
+- **Toasts:** non-blocking `Toast` (success / error / info, auto-dismiss, tap to dismiss) just **above the floating bottom nav**; `useToast()` anywhere, `ToastHost` once at the app root. Rendered under open modals.
+- **Confirms:** `ConfirmDialog` (title, message, confirm / cancel, `destructive`) for in-app confirms so they follow the theme; Android back cancels.
+- **Menus:** `ActionSheet` (icon + label rows, `destructive`, Cancel) on top of `BottomSheet`.
 
 ## Media: capture, pick, play
 

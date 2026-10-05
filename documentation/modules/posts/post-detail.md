@@ -32,8 +32,16 @@ Instagram-style single post: carousel or video, engagement, caption, comments.
 - Heart / Comment / Share / Save in action row.
   - **Share** → in-app share sheet (send in DM) with **Share to…** option that opens the native share sheet with `https://nexity.com/posts/:postId`.
 - Tap **like count** → Likers bottom sheet (`GET /posts/:id/likers`).
-- Caption: `@username` bold, "more" expands long text; `#tag` → `HashtagFeed`, `@user` → `UserProfile`.
-- **•••** → bottom sheet: owner → Edit (`EditPost` modal), Delete (destructive confirm `Alert`); viewer → Report, Unfollow, Copy link (clipboard + toast).
+- Caption: `@username` bold, "more" expands long text; `@user` → `UserProfile`. Hashtags are plain text.
+- **•••** → bottom sheet: owner → **Hide / Show like count**, **Turn comments off / on** (both apply at once and update every list showing the post), **Edit description** (with @mention suggestions), **Delete** (destructive confirm `Alert`); viewer → Report / Block.
+
+### Implementation status
+
+- Likes use `PUT` / `DELETE /posts/:id/like` (idempotent). The heart and count change at once; quick taps are merged so the last tap wins, and a failure puts back the last confirmed state. Double tap shows a heart burst.
+- When `hide_like_count` is on, the count is hidden for everyone, owner included (the API returns `likes_count: null`).
+- When comments are off, the comment button is hidden and the comments sheet says comments are turned off.
+- Tagged people: a person icon on the media shows the tagged usernames.
+- Likes, saves, comment counts, edits and deletes are shared between Home, profile grids, `PostViewer` and `PostDetail` through post events.
 
 ## API
 

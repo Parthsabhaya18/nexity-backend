@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { userIdParamsSchema } from '../follows/follow.schema';
 import { blockUser, listBlocked, unblockUser } from './block.service';
+import { muteUser, unmuteUser } from './mute.service';
 import { REPORT_REASONS, REPORT_TARGETS } from './report.model';
 import { createReport } from './report.service';
 
@@ -22,6 +23,16 @@ export const block: RequestHandler = async (req, res) => {
 
 export const unblock: RequestHandler = async (req, res) => {
   await unblockUser(req.user!, userIdParamsSchema.parse(req.params).userId);
+  res.status(204).end();
+};
+
+export const mute: RequestHandler = async (req, res) => {
+  await muteUser(req.user!, userIdParamsSchema.parse(req.params).userId);
+  res.status(204).end();
+};
+
+export const unmute: RequestHandler = async (req, res) => {
+  await unmuteUser(req.user!, userIdParamsSchema.parse(req.params).userId);
   res.status(204).end();
 };
 

@@ -21,7 +21,7 @@ import { Follow } from '../src/modules/follows/follow.model';
 import { Media } from '../src/modules/media/media.model';
 import { Notification } from '../src/modules/notifications/notification.model';
 import { Comment, PostLike, PostSave } from '../src/modules/posts/post.engage.model';
-import { Hashtag, Post } from '../src/modules/posts/post.model';
+import { Post } from '../src/modules/posts/post.model';
 import { Reel, ReelLike } from '../src/modules/reels/reel.model';
 import { Block } from '../src/modules/safety/block.model';
 import { Report } from '../src/modules/safety/report.model';
@@ -101,7 +101,6 @@ beforeAll(async () => {
       Follow,
       Media,
       Post,
-      Hashtag,
       PostLike,
       PostSave,
       Comment,
@@ -185,7 +184,6 @@ describe('app journey', () => {
     expect(post.body.media).toHaveLength(2);
     expect(post.body.media[0].url).toContain('https://cdn.test/post/');
     expect(post.body).toMatchObject({
-      hashtags: ['ahmedabad', 'gujarat'],
       mentions: ['aarav'],
       location_name: 'Ahmedabad',
       likes_count: 0,

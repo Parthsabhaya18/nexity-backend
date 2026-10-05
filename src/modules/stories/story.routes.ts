@@ -4,18 +4,15 @@ import { z } from 'zod';
 
 import { requireAuth } from '../../middlewares/requireAuth';
 import { objectIdSchema } from '../follows/follow.schema';
-import { MEDIA_LOOKS } from '../media/media.looks';
-import { LOCATION_MAX, MUSIC_MAX } from '../posts/post.model';
+import { LOCATION_MAX } from '../posts/post.model';
 import { storyOverlaysSchema } from './story.schema';
 import * as stories from './story.service';
 
 const mediaBody = z.object({
   media_id: objectIdSchema,
-  music_title: z.string().trim().max(MUSIC_MAX).default(''),
   location_name: z.string().trim().max(LOCATION_MAX).default(''),
   location_lat: z.number().min(-90).max(90).nullable().optional(),
   location_lng: z.number().min(-180).max(180).nullable().optional(),
-  filter: z.enum(MEDIA_LOOKS).default('normal'),
   overlays: storyOverlaysSchema,
 });
 const idParams = z.object({ storyId: objectIdSchema });
@@ -27,6 +24,8 @@ const replyBody = z.object({
   overlay_id: z.string().trim().min(4).max(40),
   body: z.string().trim().min(1).max(80),
 });
+
+const messageBody = z.object({ body: z.string().trim().min(1).max(500) });
 
 const create: RequestHandler = async (req, res) => {
   res.status(201).json(await stories.createStory(req.user!, mediaBody.parse(req.body)));
@@ -56,6 +55,17 @@ const reply: RequestHandler = async (req, res) => {
   res.status(201).json(await stories.replyQuestion(req.user!, storyId, overlay_id, body));
 };
 
+const likeOn: RequestHandler = async (req, res) => {
+  res.json(await stories.setStoryLike(req.user!, idParams.parse(req.params).storyId, true));
+};
+const likeOff: RequestHandler = async (req, res) => {
+  res.json(await stories.setStoryLike(req.user!, idParams.parse(req.params).storyId, false));
+};
+const message: RequestHandler = async (req, res) => {
+  const { body } = messageBody.parse(req.body);
+  res.status(201).json(await stories.messageStory(req.user!, idParams.parse(req.params).storyId, body));
+};
+
 export const storiesRouter = Router();
 storiesRouter.use(requireAuth);
 storiesRouter.get('/tray', tray);
@@ -64,4 +74,7 @@ storiesRouter.get('/:storyId/viewers', viewers);
 storiesRouter.post('/:storyId/view', view);
 storiesRouter.post('/:storyId/vote', vote);
 storiesRouter.post('/:storyId/reply', reply);
+storiesRouter.put('/:storyId/like', likeOn);
+storiesRouter.delete('/:storyId/like', likeOff);
+storiesRouter.post('/:storyId/message', message);
 storiesRouter.delete('/:storyId', remove);

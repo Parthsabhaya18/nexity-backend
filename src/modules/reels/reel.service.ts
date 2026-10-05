@@ -8,9 +8,9 @@ import { Follow } from '../follows/follow.model';
 import { Media } from '../media/media.model';
 import { viewUrl } from '../media/media.storage';
 import { User, type UserDoc } from '../users/user.model';
-import { extractHashtags, extractMentions, MAX_HASHTAGS, MAX_MENTIONS } from '../posts/caption';
+import { extractMentions, MAX_MENTIONS } from '../posts/caption';
 import { Comment } from '../posts/post.engage.model';
-import { Hashtag } from '../posts/post.model';
+import { commentDto } from '../posts/post.extra';
 import { Reel, ReelLike, type ReelDoc } from './reel.model';
 
 const MONGO_DUPLICATE_KEY = 11000;
@@ -26,20 +26,20 @@ async function toReelDto(viewer: UserDoc, reel: ReelDoc, author: UserDoc, liked:
     height: reel.height,
     duration_ms: reel.duration_ms,
     caption: reel.caption,
-    hashtags: reel.hashtags,
     mentions: reel.mentions,
     location_name: reel.location_name,
     location_lat: reel.location_lat ?? null,
     location_lng: reel.location_lng ?? null,
-    filter: reel.filter || 'normal',
-    music_title: reel.music_title ?? '',
     audio_muted: reel.audio_muted ?? false,
     cover_time_ms: reel.cover_time_ms ?? 0,
     cover_url: reel.cover_key ? await viewUrl(reel.cover_key) : null,
     trim_start_ms: reel.trim_start_ms,
     trim_end_ms: reel.trim_end_ms,
-    likes_count: reel.likes_count,
+    /** Hidden from everyone, the owner included, while `hide_like_count` is on. */
+    likes_count: reel.hide_like_count ? null : reel.likes_count,
     comments_count: reel.comments_count,
+    hide_like_count: reel.hide_like_count ?? false,
+    comments_disabled: reel.comments_disabled ?? false,
     liked_by_me: liked,
     is_owner: author._id.equals(viewer._id),
     created_at: (reel.get('created_at') as Date).toISOString(),
@@ -65,6 +65,16 @@ async function present(viewer: UserDoc, reels: ReelDoc[]) {
   );
 }
 
+async function resolveMentions(author: UserDoc, caption: string) {
+  const names = extractMentions(caption)
+    .filter((n) => n !== author.username)
+    .slice(0, MAX_MENTIONS);
+  if (!names.length) return [];
+  return User.find({ username: { $in: names }, status: 'active', is_verified: true })
+    .select('_id username')
+    .lean();
+}
+
 export async function createReel(
   author: UserDoc,
   input: {
@@ -73,9 +83,9 @@ export async function createReel(
     location_name: string;
     location_lat?: number | null;
     location_lng?: number | null;
-    filter?: string;
-    music_title?: string;
     audio_muted?: boolean;
+    hide_like_count?: boolean;
+    comments_disabled?: boolean;
     cover_time_ms?: number;
     cover_media_id?: string;
     client_upload_id?: string;
@@ -90,13 +100,7 @@ export async function createReel(
     });
     if (existing) return { reel: await toReelDto(author, existing, author, false), created: false };
   }
-  const hashtags = extractHashtags(input.caption);
-  if (hashtags.length > MAX_HASHTAGS) {
-    throw ApiError.badRequest(`You can use up to ${MAX_HASHTAGS} hashtags.`, undefined, 'TOO_MANY_HASHTAGS');
-  }
-  const mentions = extractMentions(input.caption)
-    .filter((n) => n !== author.username)
-    .slice(0, MAX_MENTIONS);
+  const mentions = await resolveMentions(author, input.caption);
   if (
     input.trim_start_ms != null &&
     input.trim_end_ms != null &&
@@ -130,14 +134,14 @@ export async function createReel(
       height: media.height,
       duration_ms: media.duration_ms,
       caption: input.caption,
-      hashtags,
-      mentions,
+      mention_ids: mentions.map((u) => u._id),
+      mentions: mentions.map((u) => u.username),
       location_name: input.location_name,
       location_lat: input.location_lat ?? null,
       location_lng: input.location_lng ?? null,
-      filter: input.filter || 'normal',
-      music_title: input.music_title ?? '',
       audio_muted: input.audio_muted ?? false,
+      hide_like_count: input.hide_like_count ?? false,
+      comments_disabled: input.comments_disabled ?? false,
       cover_time_ms: input.cover_time_ms ?? 0,
       cover_key: coverKey,
       trim_start_ms: input.trim_start_ms ?? null,
@@ -150,13 +154,6 @@ export async function createReel(
       if (raced) return { reel: await toReelDto(author, raced, author, false), created: false };
     }
     throw err;
-  }
-  if (hashtags.length) {
-    await Hashtag.bulkWrite(
-      hashtags.map((name) => ({
-        updateOne: { filter: { name }, update: { $inc: { post_count: 1 } }, upsert: true },
-      })),
-    );
   }
   return { reel: await toReelDto(author, reel, author, false), created: true };
 }
@@ -213,17 +210,60 @@ async function visibleReel(viewer: UserDoc, reelId: string) {
   return { reel, author };
 }
 
-export async function toggleReelLike(viewer: UserDoc, reelId: string) {
+export async function getReel(viewer: UserDoc, reelId: string) {
   const { reel, author } = await visibleReel(viewer, reelId);
-  const existing = await ReelLike.findOneAndDelete({ user_id: viewer._id, reel_id: reel._id });
-  if (!existing) await ReelLike.create({ user_id: viewer._id, reel_id: reel._id });
-  const delta = existing ? -1 : 1;
-  await Reel.updateOne(
-    { _id: reel._id, ...(delta < 0 ? { likes_count: { $gt: 0 } } : {}) },
-    { $inc: { likes_count: delta } },
-  );
+  const liked = await ReelLike.exists({ user_id: viewer._id, reel_id: reel._id });
+  return toReelDto(viewer, reel, author, !!liked);
+}
+
+/** Sets the like on or off. Repeating the same request changes nothing. */
+export async function setReelLike(viewer: UserDoc, reelId: string, want: boolean) {
+  const { reel, author } = await visibleReel(viewer, reelId);
+  let delta = 0;
+  if (want) {
+    const res = await ReelLike.updateOne(
+      { user_id: viewer._id, reel_id: reel._id },
+      { $setOnInsert: { user_id: viewer._id, reel_id: reel._id } },
+      { upsert: true },
+    );
+    if (res.upsertedCount > 0) delta = 1;
+  } else {
+    const res = await ReelLike.deleteOne({ user_id: viewer._id, reel_id: reel._id });
+    if (res.deletedCount > 0) delta = -1;
+  }
+  if (delta !== 0) {
+    await Reel.updateOne(
+      { _id: reel._id, ...(delta < 0 ? { likes_count: { $gt: 0 } } : {}) },
+      { $inc: { likes_count: delta } },
+    );
+  }
   const fresh = (await Reel.findById(reel._id)) ?? reel;
-  return toReelDto(viewer, fresh, author, !existing);
+  return toReelDto(viewer, fresh, author, want);
+}
+
+export async function toggleReelLike(viewer: UserDoc, reelId: string) {
+  const liked = await ReelLike.exists({ user_id: viewer._id, reel_id: reelId });
+  return setReelLike(viewer, reelId, !liked);
+}
+
+export async function updateReel(
+  viewer: UserDoc,
+  reelId: string,
+  input: { caption?: string; hide_like_count?: boolean; comments_disabled?: boolean },
+) {
+  const reel = await Reel.findOne({ _id: reelId, author_id: viewer._id, deleted_at: null });
+  if (!reel) throw ApiError.notFound('This reel is no longer available.');
+  if (input.caption !== undefined) {
+    const mentions = await resolveMentions(viewer, input.caption);
+    reel.caption = input.caption;
+    reel.mentions = mentions.map((u) => u.username);
+    reel.mention_ids = mentions.map((u) => u._id);
+  }
+  if (input.hide_like_count !== undefined) reel.hide_like_count = input.hide_like_count;
+  if (input.comments_disabled !== undefined) reel.comments_disabled = input.comments_disabled;
+  await reel.save();
+  const liked = await ReelLike.exists({ user_id: viewer._id, reel_id: reel._id });
+  return toReelDto(viewer, reel, viewer, !!liked);
 }
 
 export async function deleteReel(viewer: UserDoc, reelId: string) {
@@ -235,6 +275,9 @@ export async function deleteReel(viewer: UserDoc, reelId: string) {
 
 export async function addReelComment(viewer: UserDoc, reelId: string, body: string) {
   const { reel } = await visibleReel(viewer, reelId);
+  if (reel.comments_disabled) {
+    throw ApiError.forbidden('Comments are turned off for this reel.', 'COMMENTS_DISABLED');
+  }
   const comment = await Comment.create({ reel_id: reel._id, author_id: viewer._id, body });
   await Reel.updateOne({ _id: reel._id }, { $inc: { comments_count: 1 } });
   await notifyComment({
@@ -245,18 +288,7 @@ export async function addReelComment(viewer: UserDoc, reelId: string, body: stri
     reelId: reel._id,
     commentId: comment._id,
   });
-  return {
-    id: comment.id as string,
-    body: comment.body,
-    author: {
-      id: viewer.id as string,
-      username: viewer.username,
-      display_name: viewer.display_name,
-      avatar_url: null,
-    },
-    created_at: (comment.get('created_at') as Date).toISOString(),
-    replies: [],
-  };
+  return commentDto(comment, new Map([[viewer.id as string, viewer]]));
 }
 
 export async function listReelComments(viewer: UserDoc, reelId: string, cursor: string | undefined, limit: number) {
@@ -271,17 +303,7 @@ export async function listReelComments(viewer: UserDoc, reelId: string, cursor: 
   const users = await User.find({ _id: { $in: page.map((c) => c.author_id) } });
   const byId = new Map(users.map((u) => [u.id as string, u]));
   return {
-    items: page.map((c) => {
-      const author = byId.get(c.author_id.toHexString());
-      return {
-        id: c.id as string,
-        body: c.body,
-        author: author
-          ? { id: author.id, username: author.username, display_name: author.display_name }
-          : null,
-        created_at: (c.get('created_at') as Date).toISOString(),
-      };
-    }),
+    items: await Promise.all(page.map((c) => commentDto(c, byId))),
     next_cursor: rows.length > take ? (page[page.length - 1]!.id as string) : null,
   };
 }

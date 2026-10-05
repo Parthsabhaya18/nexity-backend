@@ -4,6 +4,7 @@ import { isOnline } from '../../realtime/io';
 import { ApiError } from '../../utils/ApiError';
 import { userSearchFilter } from '../../utils/regex';
 import { isBlockedEither } from '../safety/block.service';
+import { isMuted } from '../safety/mute.service';
 import { avatarUrlOf, User, type UserDoc } from '../users/user.model';
 import { Follow } from './follow.model';
 import type { ConnectionsQuery, PageQuery } from './follow.schema';
@@ -132,11 +133,12 @@ export async function getProfile(viewer: UserDoc, username: string) {
   if (!isVisible(user)) throw userNotFound();
   const isSelf = user._id.equals(viewer._id);
   if (!isSelf && (await isBlockedEither(viewer._id, user._id))) throw userNotFound();
-  const [status, followsYou] = isSelf
-    ? (['none', false] as const)
+  const [status, followsYou, muted] = isSelf
+    ? (['none', false, false] as const)
     : await Promise.all([
         followStatus(viewer, user),
         Follow.exists({ follower_id: user._id, following_id: viewer._id, status: 'accepted' }),
+        isMuted(viewer._id, user._id),
       ]);
 
   return {
@@ -154,6 +156,7 @@ export async function getProfile(viewer: UserDoc, username: string) {
     is_self: isSelf,
     follow_status: status,
     follows_you: Boolean(followsYou),
+    muted,
     can_view_content: isSelf || !user.is_private || status === 'accepted',
     presence: {
       online: isOnline(user.id as string),

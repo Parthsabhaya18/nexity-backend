@@ -94,6 +94,11 @@ export async function createUpload(user: UserDoc, input: CreateUploadInput) {
       'MEDIA_TOO_LONG',
     );
   }
+  if (input.client_upload_id) {
+    const resumed = await resumeUpload(user, input, rule.maxBytes);
+    if (resumed) return resumed;
+  }
+
   const pending = await Media.countDocuments({
     owner_id: user._id,
     status: 'pending',
@@ -110,43 +115,107 @@ export async function createUpload(user: UserDoc, input: CreateUploadInput) {
   const id = new mongoose.Types.ObjectId();
   const key = `media/${KEY_FOLDERS[input.purpose]}/${user.id as string}/${id.toHexString()}.${ext}`;
 
-  if (input.bytes > MULTIPART_THRESHOLD) {
-    const partSize = partSizeFor(input.bytes);
-    const uploadId = await storage.createMultipartUpload({ key, contentType: input.content_type });
-    const expiresAt = new Date(Date.now() + MULTIPART_IDLE_MS);
+  try {
+    if (input.bytes > MULTIPART_THRESHOLD) {
+      const partSize = partSizeFor(input.bytes);
+      const uploadId = await storage.createMultipartUpload({ key, contentType: input.content_type });
+      const expiresAt = new Date(Date.now() + MULTIPART_IDLE_MS);
+      const media = await Media.create({
+        ...newMediaFields(user, input, kind, key, expiresAt),
+        _id: id,
+        upload_id: uploadId,
+        part_size: partSize,
+      });
+      return { media: await toMediaDto(media), upload: multipartTicket(media) };
+    }
+
+    const ttl = env.MEDIA_UPLOAD_URL_TTL_SECONDS;
+    const expiresAt = new Date(Date.now() + ttl * 1000);
     const media = await Media.create({
       ...newMediaFields(user, input, kind, key, expiresAt),
       _id: id,
-      upload_id: uploadId,
-      part_size: partSize,
     });
     return {
       media: await toMediaDto(media),
-      upload: {
-        method: 'multipart' as const,
-        part_size: partSize,
-        part_count: partCountOf(media),
-        expires_at: expiresAt.toISOString(),
-      },
+      upload: await postTicket(media, rule.maxBytes),
     };
+  } catch (err) {
+    // The same client_upload_id was sent twice at once: answer with the winner.
+    if (
+      input.client_upload_id &&
+      err instanceof mongoose.mongo.MongoServerError &&
+      err.code === MONGO_DUPLICATE_KEY
+    ) {
+      const raced = await resumeUpload(user, input, rule.maxBytes);
+      if (raced) return raced;
+    }
+    throw err;
   }
+}
 
+const MONGO_DUPLICATE_KEY = 11000;
+
+function multipartTicket(media: MediaDoc) {
+  return {
+    method: 'multipart' as const,
+    part_size: media.part_size!,
+    part_count: partCountOf(media),
+    expires_at: media.upload_expires_at.toISOString(),
+  };
+}
+
+/** A fresh presigned POST for the media's key; also pushes back its expiry. */
+async function postTicket(media: MediaDoc, maxBytes: number) {
   const ttl = env.MEDIA_UPLOAD_URL_TTL_SECONDS;
   const expiresAt = new Date(Date.now() + ttl * 1000);
   const upload = await storage.presignUpload({
-    key,
-    contentType: input.content_type,
-    maxBytes: rule.maxBytes,
+    key: media.key,
+    contentType: media.content_type,
+    maxBytes,
     expiresInSeconds: ttl,
   });
-  const media = await Media.create({
-    ...newMediaFields(user, input, kind, key, expiresAt),
-    _id: id,
-  });
+  if (media.upload_expires_at.getTime() < expiresAt.getTime()) {
+    media.upload_expires_at = expiresAt;
+    await media.save();
+  }
+  return { method: 'post' as const, ...upload, expires_at: expiresAt.toISOString() };
+}
 
+/**
+ * Same `client_upload_id` again (retry or app restart): hands back the upload
+ * that already exists. `complete` when it already finished; the same multipart
+ * upload so sent parts are kept; a new presigned POST for the same key.
+ * A different file (size / type) or an expired upload starts over.
+ */
+async function resumeUpload(user: UserDoc, input: CreateUploadInput, maxBytes: number) {
+  const media = await Media.findOne({
+    owner_id: user._id,
+    client_upload_id: input.client_upload_id,
+  });
+  if (!media) return null;
+  if (media.status === 'ready') {
+    return {
+      media: await toMediaDto(media),
+      upload: { method: 'complete' as const },
+      resumed: true,
+    };
+  }
+  const sameFile =
+    media.purpose === input.purpose &&
+    media.content_type === input.content_type &&
+    media.bytes === input.bytes;
+  const expired = media.upload_expires_at.getTime() < Date.now();
+  if (!sameFile || expired) {
+    await discard(media);
+    return null;
+  }
+  if (media.upload_id) {
+    return { media: await toMediaDto(media), upload: multipartTicket(media), resumed: true };
+  }
   return {
     media: await toMediaDto(media),
-    upload: { method: 'post' as const, ...upload, expires_at: expiresAt.toISOString() },
+    upload: await postTicket(media, maxBytes),
+    resumed: true,
   };
 }
 
@@ -167,6 +236,7 @@ function newMediaFields(
     width: input.width ?? null,
     height: input.height ?? null,
     duration_ms: kind === 'video' ? (input.duration_ms ?? null) : null,
+    client_upload_id: input.client_upload_id ?? null,
     upload_expires_at: expiresAt,
   };
 }

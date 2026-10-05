@@ -1,7 +1,7 @@
 import mongoose, { type HydratedDocument, type InferSchemaType } from 'mongoose';
 
 import { CAPTION_MAX } from '../posts/caption';
-import { LOCATION_MAX, MUSIC_MAX } from '../posts/post.model';
+import { LOCATION_MAX } from '../posts/post.model';
 
 const reelSchema = new mongoose.Schema(
   {
@@ -12,14 +12,11 @@ const reelSchema = new mongoose.Schema(
     height: { type: Number, default: null },
     duration_ms: { type: Number, default: null },
     caption: { type: String, default: '', maxlength: CAPTION_MAX },
-    hashtags: { type: [String], default: [] },
+    mention_ids: { type: [mongoose.Schema.Types.ObjectId], default: [] },
     mentions: { type: [String], default: [] },
     location_name: { type: String, default: '', maxlength: LOCATION_MAX },
     location_lat: { type: Number, default: null },
     location_lng: { type: Number, default: null },
-    /** Colour look drawn over the video. `normal` is unchanged. */
-    filter: { type: String, default: 'normal' },
-    music_title: { type: String, default: '', maxlength: MUSIC_MAX },
     /** Author muted the clip's original sound for every viewer. */
     audio_muted: { type: Boolean, default: false },
     /** Frame used as the grid cover, in milliseconds. */
@@ -29,6 +26,8 @@ const reelSchema = new mongoose.Schema(
     /** Playback window. Null plays the whole file. */
     trim_start_ms: { type: Number, default: null },
     trim_end_ms: { type: Number, default: null },
+    hide_like_count: { type: Boolean, default: false },
+    comments_disabled: { type: Boolean, default: false },
     likes_count: { type: Number, default: 0, min: 0 },
     comments_count: { type: Number, default: 0, min: 0 },
     client_upload_id: { type: String, default: null },

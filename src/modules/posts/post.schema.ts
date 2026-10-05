@@ -1,12 +1,12 @@
 import { z } from 'zod';
 
 import { objectIdSchema } from '../follows/follow.schema';
-import { MEDIA_LOOKS } from '../media/media.looks';
 import { MAX_ITEMS } from '../media/media.rules';
-import { CAPTION_MAX } from './caption';
-import { ALT_TEXT_MAX, LOCATION_MAX, MAX_ASPECT, MIN_ASPECT, MUSIC_MAX } from './post.model';
+import { CAPTION_MAX, MAX_TAGGED } from './caption';
+import { ALT_TEXT_MAX, LOCATION_MAX, MAX_ASPECT, MIN_ASPECT } from './post.model';
 
 const look = z.number().min(-100).max(100);
+
 /** Photo edits stored with the post and replayed for every viewer. */
 export const adjustmentsSchema = z
   .object({
@@ -50,9 +50,11 @@ export const createPostSchema = z.object({
   location_lat: z.number().min(-90).max(90).nullable().optional(),
   location_lng: z.number().min(-180).max(180).nullable().optional(),
   adjustments: adjustmentsSchema,
-  /** One look per photo, in carousel order. Missing entries stay `normal`. */
-  filters: z.array(z.enum(MEDIA_LOOKS)).max(MAX_ITEMS.post).optional(),
-  music_title: z.string().trim().max(MUSIC_MAX).default(''),
+  /** People picked in "Tag people". */
+  tagged_user_ids: z
+    .array(objectIdSchema)
+    .max(MAX_TAGGED, `You can tag up to ${MAX_TAGGED} people.`)
+    .default([]),
   aspect_ratio: z.number().min(MIN_ASPECT).max(MAX_ASPECT).default(1),
   hide_like_count: z.boolean().default(false),
   comments_disabled: z.boolean().default(false),
@@ -84,12 +86,4 @@ export const commentBodySchema = z.object({
 export const cursorQuerySchema = z.object({
   cursor: objectIdSchema.optional().catch(undefined),
   limit: z.coerce.number().int().min(1).max(50).default(20).catch(20),
-});
-
-export const tagParamsSchema = z.object({
-  tag: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .regex(/^[\p{L}\p{M}\p{N}_]{1,100}$/u, 'Invalid hashtag'),
 });

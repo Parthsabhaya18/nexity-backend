@@ -171,7 +171,8 @@ Components use **semantic tokens only**.
 | `primary` | `#0095F6` | Links and accents while dark (not a mood Primary) |
 | `button` | `#0095F6` | Primary buttons while dark |
 | `primaryText` | `#FFFFFF` | Text on `button` |
-| `skeleton` | `#262626` | Loading placeholders |
+| `skeleton` | `#262626` | Loading placeholders (light `#EFEFEF`; mood: Border 80% over Base) |
+| `skeletonHighlight` | `#363636` | Moving shimmer on skeletons (light `#FAFAFA`; mood: Base) |
 | `overlay` | `rgba(0,0,0,0.65)` | Behind sheets and modals |
 | `bubbleOutgoing` | `#3797F0` | DM bubbles sent by me |
 | `bubbleIncoming` | `#262626` | DM bubbles received |
@@ -213,6 +214,7 @@ Their accents use the current theme's `primary`. Sheets opened on top of these s
 
 - `ThemeProvider` holds `theme` (`light` | `dark` | `system`), `mood` (mood id or `null`), the resolved appearance, and `colors`. Expose `useTheme()` with `setTheme(value)` (also clears `mood`) and `setMood(id)` (toggles: the same id again clears it).
 - `colors` is built once per change: mood row + derived mood tokens when `mood` is set, otherwise the default light or dark tokens. Do not invent extra mood hex values.
+- `ThemeScope` (`src/theme/ThemeProvider.tsx`) renders a subtree in another resolved theme; `useAppTheme()` reads it first. Used by the dev component gallery and by the app-root hosts (`ToastHost`, `PermissionHost`) so a toast or permission sheet takes the theme of the screen that opened it.
 - Read the OS scheme with `useColorScheme()` / `Appearance.addChangeListener` only when `theme` is `system` and no mood is set.
 - Pass a matching theme to React Navigation `NavigationContainer` (extend `DefaultTheme` / `DarkTheme` with the tokens above) so headers, the tab bar, and card backgrounds follow the mood too.
 - Build styles from `colors` (e.g. a `makeStyles(colors)` helper); no hex values in component files.
