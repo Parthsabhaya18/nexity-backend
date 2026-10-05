@@ -22,7 +22,15 @@ Fullscreen Instagram-style story viewer for one user's active story bundle, cont
 - **Footer:** "Send message" reply input + quick reactions; focusing it pauses the story and lifts the input above the keyboard. Sending creates/opens a DM with story reply context (IG story reply).
 - Owner footer: **Activity** (viewer list, Phase 2).
 
-Image default display **5 seconds**; video plays its own duration (max 60 s). Auto-advance pauses while the app is in background or a sheet is open.
+Image default display **5 seconds**; video plays its own duration (max 2 minutes). Auto-advance pauses while the app is in background or a sheet is open.
+
+## Implementation status
+
+- Opened from the Home tray as a full-screen modal (your own story first). Animated progress bars: photos 5 s, videos follow their playback. A spinner shows and progress waits while media loads; a load error offers retry or skip.
+- Tap left third → previous, right → next; **hold** → pause; **swipe down** or Android back → close; **swipe sideways** → previous / next person.
+- **Viewer footer:** heart (`PUT` / `DELETE /stories/:id/like`, optimistic) and a **Send message** field. A message goes privately to the author (`POST /stories/:id/message`, stored with the story). Question stickers send `POST /stories/:id/reply`; polls `POST /stories/:id/vote`.
+- **Owner footer:** **Viewers** (bottom sheet, `GET /stories/:id/viewers`, shows who liked) and **Delete** (with confirmation, `DELETE /stories/:id`).
+- Status bar hidden; overlays (text, stickers, mentions, polls, questions) drawn over the media.
 
 ## API
 

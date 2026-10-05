@@ -75,7 +75,7 @@ The public `url` is computed at read time from `MEDIA_PUBLIC_BASE_URL` + `key`, 
 | is_deleted | boolean |
 | created_at, updated_at | datetime |
 
-> Implementation note (collection `posts`, ObjectId ids): `media` is an embedded ordered array `{ media_id, key, kind, width, height, alt_text }` (alt text max 100). Also stored: `hashtags` (lowercase, max 30), `mention_ids` + `mentions` (usernames that existed when shared, max 20), `aspect_ratio` (width / height of the carousel frame, 0.8–1.91), `location_lat` / `location_lng` (nullable), `adjustments` (brightness, contrast, saturation, warmth, fade, sharpen, blur, vignette), `likes_count`, `comments_count`, `client_upload_id` (unique per author when set). There is no `visibility` field yet: a post follows its author's account privacy. `tagged_user_ids`, `is_edited` and soft delete arrive with edit/delete. Media used by a post can't be deleted through `DELETE /media/:id` (`409 MEDIA_IN_USE`). `User.posts_count` is incremented on create.
+> Implementation note (collection `posts`, ObjectId ids): `media` is an embedded ordered array `{ media_id, key, kind, width, height, alt_text }` (alt text max 100). Also stored: `mention_ids` + `mentions` (usernames that existed when shared, max 20), `aspect_ratio` (width / height of the carousel frame, 0.8–1.91), `location_lat` / `location_lng` (nullable), `adjustments` (brightness, contrast, saturation, warmth, fade, sharpen, blur, vignette), `likes_count`, `comments_count`, `client_upload_id` (unique per author when set). There is no `visibility` field yet: a post follows its author's account privacy. `tagged_ids` (max 20, sent as `tagged_user_ids`, returned as `tagged_users`). Hashtags are not stored. Media used by a post can't be deleted through `DELETE /media/:id` (`409 MEDIA_IN_USE`). `User.posts_count` is incremented on create.
 
 ## PostLike, PostSave, Comment
 
@@ -102,7 +102,7 @@ The public `url` is computed at read time from `MEDIA_PUBLIC_BASE_URL` + `key`, 
 | is_edited | boolean |
 | created_at | datetime |
 
-> Implementation: also `music_title`, `location_lat` / `location_lng`, `audio_muted`, `cover_time_ms`, and `cover_key` (optional uploaded cover photo). Trim is a playback window, not a re-encoded file.
+> Implementation: also `location_lat` / `location_lng`, `audio_muted`, `hide_like_count`, `comments_disabled`, `cover_time_ms`, and `cover_key` (optional uploaded cover photo). Trim is a playback window, not a re-encoded file.
 
 ## Story
 
@@ -117,7 +117,7 @@ The public `url` is computed at read time from `MEDIA_PUBLIC_BASE_URL` + `key`, 
 
 No `is_edited` — stories are not editable after publish (Instagram parity).
 
-> Implementation: also `music_title`, `location_name`, `location_lat` / `location_lng`, and `overlays` (up to 12: text, sticker, draw, poll, question, quiz, countdown, link, hashtag, mention). Overlays are drawn in the viewer; they are not baked into the media file. Poll votes live in `story_poll_votes`. Question answers live in `story_question_replies`.
+> Implementation: also `location_name`, `location_lat` / `location_lng`, and `overlays` (up to 12: text, sticker, draw, poll, question, quiz, countdown, link, mention; old stories may still hold a hashtag overlay). Overlays are drawn in the viewer; they are not baked into the media file. Poll votes live in `story_poll_votes`. Question answers live in `story_question_replies`.
 
 ## Conversation, Message
 
@@ -225,6 +225,4 @@ One row per user. Booleans default `true` unless noted.
 
 ## Hashtag
 
-Extract `#word` from captions; store normalized tag (lowercase) and link table `post_hashtags`.
-
-> Implementation note: tags are stored on the post (`Post.hashtags`, indexed) instead of a link table, and collection `hashtags` keeps `{ name, post_count }` for autocomplete (`GET /search?type=tags`). Letters of any script (with vowel signs), digits and `_`; all-digit tags are ignored.
+Removed. Captions are not parsed for hashtags, and there is no tag search and no hashtag feed.

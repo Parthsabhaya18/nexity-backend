@@ -25,6 +25,17 @@ Full-screen Instagram Reels tab experience (vertical feed).
 
 Video URLs: Cloudinary adaptive streaming (`sp_hd` → HLS), played with `react-native-video` (AVPlayer on iOS, ExoPlayer on Android). Show the `thumbnail_url` poster until the first frame renders.
 
+## Implementation status
+
+- `Reels` tab: vertical full-screen paging (`FlatList`, one reel per page sized to the tab's own height, snapping, `getItemLayout`, at most 3 pages mounted). Only the visible reel plays; it pauses when the tab loses focus or a sheet is open, and restarts playing when you come back to it.
+- **Single tap** → pause / play with a play icon in the middle (this app uses tap-to-pause rather than tap-to-mute). **Double tap** → like with a heart burst. The cover photo shows until the first frame; a spinner shows while buffering; a playback error offers **Try again**.
+- **Right column:** Like (with count, hidden when `hide_like_count` is on), Comment (hidden when comments are off), Share (native share sheet with `https://nexity.com/reels/:id`), sound on / off (not shown if the author muted the audio), Play / Pause, and •••.
+- **•••** owner: bottom sheet with **Hide / Show like count**, **Turn comments off / on**, **Edit description**, **Delete** (with confirmation), using `PATCH` / `DELETE /reels/:id`. Others: Report / Block.
+- **Bottom:** author avatar and username (tap → profile), caption (tap to expand), location.
+- Likes use `PUT` / `DELETE /reels/:id/like`; quick taps are merged so the final state always matches the last tap. Comments use the shared comments sheet with a send icon and loader ([reel-comments.md](reel-comments.md)).
+- Empty feed shows **No reels yet** with **Create a reel**; a load error shows **Try again**. Pull to refresh.
+- Not yet: Save reel, view counting (`POST /reels/:id/view`), Follow button on the reel, audio label.
+
 ## API
 
 ### `GET /api/v1/reels/feed`

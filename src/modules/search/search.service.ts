@@ -2,7 +2,7 @@ import { escapeRegex, userSearchFilter } from '../../utils/regex';
 import { Follow } from '../follows/follow.model';
 import { toUserSummaries } from '../follows/follow.service';
 import { blockIdsFor } from '../safety/block.service';
-import { Hashtag, Post } from '../posts/post.model';
+import { Post } from '../posts/post.model';
 import { User, type UserDoc } from '../users/user.model';
 import { lookUpPlaces } from './placeLookup';
 
@@ -40,20 +40,6 @@ export async function suggestUsers(viewer: UserDoc, limit: number) {
     .sort({ followers_count: -1, username: 1 })
     .limit(limit);
   return toUserSummaries(viewer, users);
-}
-
-/** Hashtags starting with the query, most used first. */
-export async function searchTags(rawQuery: string, limit: number) {
-  const term = rawQuery.trim().replace(/^#/, '').toLowerCase();
-  if (!term) return [];
-  const tags = await Hashtag.find({
-    name: new RegExp(`^${escapeRegex(term)}`),
-    post_count: { $gt: 0 },
-  })
-    .sort({ post_count: -1, name: 1 })
-    .limit(limit)
-    .lean();
-  return tags.map((t) => ({ name: t.name, post_count: t.post_count }));
 }
 
 /** Big places offered even when the map search is down. */

@@ -6,9 +6,10 @@ import { Follow } from '../follows/follow.model';
 import { notifyComment } from '../notifications/notification.service';
 import { audienceIds, isBlockedEither } from '../safety/block.service';
 import { avatarUrlOf, User, type UserDoc } from '../users/user.model';
-import { extractHashtags, extractMentions, MAX_HASHTAGS, MAX_MENTIONS } from './caption';
+import { extractMentions, MAX_MENTIONS } from './caption';
 import { Comment, PostLike, PostSave } from './post.engage.model';
-import { Hashtag, Post, type PostDoc } from './post.model';
+import { Post, type PostDoc } from './post.model';
+import { Reel } from '../reels/reel.model';
 import { toPostDto } from './post.service';
 
 const pageOf = (limit: number) => Math.min(50, Math.max(1, limit || 20));
@@ -139,30 +140,6 @@ export async function savedPosts(viewer: UserDoc, cursor: string | undefined, li
   };
 }
 
-export async function postsByTag(
-  viewer: UserDoc,
-  tag: string,
-  cursor: string | undefined,
-  limit: number,
-) {
-  const take = pageOf(limit);
-  const filter: Record<string, unknown> = { hashtags: tag.toLowerCase(), deleted_at: null };
-  if (cursor) filter._id = { $lt: cursor };
-  const rows = await Post.find(filter)
-    .sort({ _id: -1 })
-    .limit(take + 1);
-  const visible: PostDoc[] = [];
-  for (const post of rows.slice(0, take)) {
-    const author = await User.findById(post.author_id);
-    if (author && (await canViewContent(viewer, author))) visible.push(post);
-  }
-  const page = rows.slice(0, take);
-  return {
-    items: await presentPosts(viewer, visible),
-    next_cursor: rows.length > take ? (page[page.length - 1]!.id as string) : null,
-  };
-}
-
 async function counted(
   viewer: UserDoc,
   post: PostDoc,
@@ -180,14 +157,38 @@ async function counted(
   });
 }
 
-export async function toggleLike(viewer: UserDoc, postId: string) {
+/** Sets the like on or off. Repeating the same request changes nothing. */
+export async function setLike(viewer: UserDoc, postId: string, want: boolean) {
   const { post, author } = await visiblePost(viewer, postId);
-  const existing = await PostLike.findOneAndDelete({ user_id: viewer._id, post_id: post._id });
-  if (!existing) await PostLike.create({ user_id: viewer._id, post_id: post._id });
-  const dto = await counted(viewer, post, author, 'likes_count', existing ? -1 : 1);
-  return { liked: !existing, likes_count: dto.likes_count, post: dto };
+  let delta: 1 | -1 | 0 = 0;
+  if (want) {
+    const res = await PostLike.updateOne(
+      { user_id: viewer._id, post_id: post._id },
+      { $setOnInsert: { user_id: viewer._id, post_id: post._id } },
+      { upsert: true },
+    );
+    if (res.upsertedCount > 0) delta = 1;
+  } else {
+    const res = await PostLike.deleteOne({ user_id: viewer._id, post_id: post._id });
+    if (res.deletedCount > 0) delta = -1;
+  }
+  let dto;
+  if (delta === 0) {
+    const flags = await flagsFor(viewer, [post._id]);
+    dto = await toPostDto(viewer, post, author, {
+      liked: flags.liked.has(post.id as string),
+      saved: flags.saved.has(post.id as string),
+    });
+  } else {
+    dto = await counted(viewer, post, author, 'likes_count', delta);
+  }
+  return { liked: dto.liked_by_me, likes_count: dto.likes_count, post: dto };
 }
 
+export async function toggleLike(viewer: UserDoc, postId: string) {
+  const liked = await PostLike.exists({ user_id: viewer._id, post_id: postId });
+  return setLike(viewer, postId, !liked);
+}
 export async function toggleSave(viewer: UserDoc, postId: string) {
   const { post, author } = await visiblePost(viewer, postId);
   const existing = await PostSave.findOneAndDelete({ user_id: viewer._id, post_id: post._id });
@@ -231,7 +232,7 @@ export async function listComments(
   };
 }
 
-type CommentShape = {
+export type CommentShape = {
   id: string;
   body: string;
   author: { id: string; username: string; display_name: string; avatar_url: string | null } | null;
@@ -239,7 +240,7 @@ type CommentShape = {
   replies: CommentShape[];
 };
 
-async function commentDto(
+export async function commentDto(
   comment: { id: string; author_id: Types.ObjectId; body: string; get: (k: string) => unknown },
   users: Map<string, UserDoc>,
   replies: { id: string; author_id: Types.ObjectId; body: string; get: (k: string) => unknown }[] = [],
@@ -307,20 +308,36 @@ export async function addComment(
 
 export async function deleteComment(viewer: UserDoc, commentId: string) {
   const comment = await Comment.findById(commentId);
-  if (!comment?.post_id) throw ApiError.notFound('That comment is no longer available.');
-  const post = await Post.findById(comment.post_id);
-  if (!post || post.deleted_at) throw ApiError.notFound('That comment is no longer available.');
-  const owner = post.author_id.equals(viewer._id) || comment.author_id.equals(viewer._id);
-  if (!owner) throw ApiError.forbidden('You can only delete your own comments.');
-  await Comment.deleteMany({ $or: [{ _id: comment._id }, { parent_id: comment._id }] });
-  if (!comment.parent_id) {
-    await Post.updateOne(
-      { _id: post._id, comments_count: { $gt: 0 } },
+  const gone = () => ApiError.notFound('That comment is no longer available.');
+  if (!comment) throw gone();
+  if (comment.post_id) {
+    const post = await Post.findById(comment.post_id);
+    if (!post || post.deleted_at) throw gone();
+    const owner = post.author_id.equals(viewer._id) || comment.author_id.equals(viewer._id);
+    if (!owner) throw ApiError.forbidden('You can only delete your own comments.');
+    await Comment.deleteMany({ $or: [{ _id: comment._id }, { parent_id: comment._id }] });
+    if (!comment.parent_id) {
+      await Post.updateOne(
+        { _id: post._id, comments_count: { $gt: 0 } },
+        { $inc: { comments_count: -1 } },
+      );
+    }
+    return;
+  }
+  if (comment.reel_id) {
+    const reel = await Reel.findById(comment.reel_id);
+    if (!reel || reel.deleted_at) throw gone();
+    const owner = reel.author_id.equals(viewer._id) || comment.author_id.equals(viewer._id);
+    if (!owner) throw ApiError.forbidden('You can only delete your own comments.');
+    await Comment.deleteOne({ _id: comment._id });
+    await Reel.updateOne(
+      { _id: reel._id, comments_count: { $gt: 0 } },
       { $inc: { comments_count: -1 } },
     );
+    return;
   }
+  throw gone();
 }
-
 export async function deletePost(viewer: UserDoc, postId: string) {
   const post = await Post.findOne({ _id: postId, author_id: viewer._id, deleted_at: null });
   if (!post) throw ApiError.notFound('This post is no longer available.');
@@ -330,16 +347,6 @@ export async function deletePost(viewer: UserDoc, postId: string) {
     { _id: viewer._id, posts_count: { $gt: 0 } },
     { $inc: { posts_count: -1 } },
   );
-  if (post.hashtags.length) {
-    await Hashtag.bulkWrite(
-      post.hashtags.map((name) => ({
-        updateOne: {
-          filter: { name, post_count: { $gt: 0 } },
-          update: { $inc: { post_count: -1 } },
-        },
-      })),
-    );
-  }
 }
 
 export async function updatePost(
@@ -356,36 +363,18 @@ export async function updatePost(
   const post = await Post.findOne({ _id: postId, author_id: viewer._id, deleted_at: null });
   if (!post) throw ApiError.notFound('This post is no longer available.');
   if (input.caption !== undefined) {
-    const hashtags = extractHashtags(input.caption);
-    if (hashtags.length > MAX_HASHTAGS) {
-      throw ApiError.badRequest(`You can use up to ${MAX_HASHTAGS} hashtags.`, undefined, 'TOO_MANY_HASHTAGS');
-    }
-    const mentions = extractMentions(input.caption).filter((n) => n !== viewer.username);
-    if (mentions.length > MAX_MENTIONS) {
+    const names = extractMentions(input.caption).filter((n) => n !== viewer.username);
+    if (names.length > MAX_MENTIONS) {
       throw ApiError.badRequest(`You can mention up to ${MAX_MENTIONS} people.`, undefined, 'TOO_MANY_MENTIONS');
     }
-    const removed = post.hashtags.filter((t) => !hashtags.includes(t));
-    const added = hashtags.filter((t) => !post.hashtags.includes(t));
+    const found = names.length
+      ? await User.find({ username: { $in: names }, status: 'active', is_verified: true })
+          .select('_id username')
+          .lean()
+      : [];
     post.caption = input.caption;
-    post.hashtags = hashtags;
-    post.mentions = mentions.slice(0, MAX_MENTIONS);
-    if (removed.length || added.length) {
-      await Hashtag.bulkWrite([
-        ...removed.map((name) => ({
-          updateOne: {
-            filter: { name, post_count: { $gt: 0 } },
-            update: { $inc: { post_count: -1 } },
-          },
-        })),
-        ...added.map((name) => ({
-          updateOne: {
-            filter: { name },
-            update: { $inc: { post_count: 1 } },
-            upsert: true,
-          },
-        })),
-      ]);
-    }
+    post.mentions = found.map((u) => u.username);
+    post.mention_ids = found.map((u) => u._id);
   }
   if (input.location_name !== undefined) post.location_name = input.location_name;
   if (input.hide_like_count !== undefined) post.hide_like_count = input.hide_like_count;

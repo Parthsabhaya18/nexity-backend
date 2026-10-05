@@ -19,6 +19,7 @@ import { Notification } from '../src/modules/notifications/notification.model';
 import { Comment } from '../src/modules/posts/post.engage.model';
 import { Post } from '../src/modules/posts/post.model';
 import { Block } from '../src/modules/safety/block.model';
+import { Mute } from '../src/modules/safety/mute.model';
 import { Report } from '../src/modules/safety/report.model';
 import { User } from '../src/modules/users/user.model';
 
@@ -90,6 +91,7 @@ beforeEach(async () => {
     Comment.deleteMany({}),
     Media.deleteMany({}),
     Block.deleteMany({}),
+    Mute.deleteMany({}),
     Report.deleteMany({}),
     Notification.deleteMany({}),
     OtpCode.deleteMany({}),
@@ -119,6 +121,23 @@ describe('block, report and comment notifications', () => {
     expect((await api(alice).del(`/users/${bob.id}/block`)).status).toBe(204);
     expect((await api(alice).get('/users/by-username/bob')).status).toBe(200);
     expect((await api(alice).get('/users/me')).body.following_count).toBe(0);
+  });
+
+  it('mutes and unmutes quietly, shown only to the muter', async () => {
+    const alice = await signUp('alice');
+    const bob = await signUp('bob');
+    expect((await api(alice).post(`/users/${bob.id}/mute`)).status).toBe(204);
+    expect((await api(alice).post(`/users/${bob.id}/mute`)).status).toBe(204);
+    expect(await Mute.countDocuments()).toBe(1);
+    expect((await api(alice).get('/users/by-username/bob')).body.muted).toBe(true);
+    expect((await api(bob).get('/users/by-username/alice')).body.muted).toBe(false);
+
+    expect((await api(alice).post(`/users/${alice.id}/mute`)).status).toBe(400);
+    expect((await api(alice).post('/users/0123456789abcdef01234567/mute')).status).toBe(404);
+    expect((await request(app).post(`/api/v1/users/${bob.id}/mute`)).status).toBe(401);
+
+    expect((await api(alice).del(`/users/${bob.id}/mute`)).status).toBe(204);
+    expect((await api(alice).get('/users/by-username/bob')).body.muted).toBe(false);
   });
 
   it('accepts a report once and notifies the post author about a comment', async () => {

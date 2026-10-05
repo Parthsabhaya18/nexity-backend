@@ -27,8 +27,8 @@ Multi-step — same mental model as IG “New post”:
 
 1. **Select** — in-app gallery grid (recent photos/videos, album switcher, camera shortcut); up to **10 images** OR **1 video** (no mixing).
 2. **Crop / aspect** — per item: Original, 1:1, 4:5, 16:9; pinch-zoom and pan; carousel reorder (long-press and drag thumbnails).
-3. **Filter / edit** (optional v3) — lux, structure sliders; can ship as “Phase 2” UI shell with Normal only at first.
-4. **Compose** — caption, **Tag people**, **Add location**, **Add music** (optional off in v3), **Alt text** per image, advanced: hide like/view counts, turn off commenting.
+3. **Adjust** — brightness, contrast, saturation, warmth, fade, sharpen, blur and vignette sliders. Nexity has no named filters.
+4. **Compose** — caption with @mentions (no hashtags), **Tag people**, **Add location**, advanced: hide like count, turn off commenting. Nexity has no music and no audience picker.
 5. **Share** — upload each file to Cloudinary, confirm media, `POST /posts`, then land on feed with success toast.
 
 **Screens:** `CreatePostStack` (fullscreen modal) → `CreatePostSelect` → `CreatePostCrop` → `CreatePostDetails`. Deep link `nexity://create/post`.
@@ -40,7 +40,7 @@ Multi-step — same mental model as IG “New post”:
 | **Home feed** | Card: carousel swipe, dots indicator, inline video mute icon, audio off by default in feed |
 | **Post detail** | `PostDetail` screen — media full width on top, caption and comments below; comments also open as a bottom sheet from the feed |
 | **Profile grid** | Square thumbnails; video small reel icon overlay; carousel corner icon |
-| **From grid tap** | Open post detail or **modal viewer** (lightbox) with same carousel behavior |
+| **From grid tap** | `PostViewer`: the tapped post, swipe left / right for the other posts in the grid |
 
 ### Edit (match Instagram)
 
@@ -73,13 +73,13 @@ Confirm dialog → soft delete → remove from feed/profile grid; purge Cloudina
 
 1. **Clips** — upload video or record segments (single clip OK for v3).
 2. **Edit** — trim timeline, cover frame scrubber, optional text/stickers (stickers Phase 2).
-3. **Audio** — display track name if provided (library optional v3).
-4. **Share** — caption, cover thumbnail, tag people, location, audience (public/followers).
+3. **Audio** — keep or mute the original sound (no music library).
+4. **Share** — caption, cover, location, hide like count, turn off commenting.
 5. Upload video + cover image to Cloudinary → `POST /reels`.
 
 **Screens:** `CreateReelStack` (fullscreen modal) → `CreateReelVideo` → `CreateReelEdit` → `CreateReelDetails`. Deep link `nexity://create/reel`.
 
-Max length **3 minutes**, like Instagram.
+Max length **2 minutes** for reels, post videos and story videos (product decision; enforced in the gallery, before upload, and by the API).
 
 ### View (match Instagram Reels)
 

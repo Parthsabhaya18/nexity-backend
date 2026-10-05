@@ -10,12 +10,13 @@ import {
   feed,
   getPost,
   likePost,
+  likePostOff,
+  likePostOn,
   postComments,
   postLikers,
   removeComment,
   savePost,
   saved,
-  tagPosts,
   updatePost,
   userPosts,
 } from './post.controller';
@@ -23,11 +24,12 @@ import {
 export const postsRouter = Router();
 export const feedRouter = Router();
 export const commentsRouter = Router();
-export const tagsRouter = Router();
 
 postsRouter.use(requireAuth);
 postsRouter.post('/', postCreateLimiter, createPost);
 postsRouter.post('/:postId/like', likePost);
+postsRouter.put('/:postId/like', likePostOn);
+postsRouter.delete('/:postId/like', likePostOff);
 postsRouter.post('/:postId/save', savePost);
 postsRouter.get('/:postId/comments', postComments);
 postsRouter.post('/:postId/comments', addPostComment);
@@ -47,8 +49,5 @@ commentsRouter.delete('/:commentId', (req, res, next) => {
   }
   return removeComment(req, res, next);
 });
-
-tagsRouter.use(requireAuth);
-tagsRouter.get('/:tag/posts', tagPosts);
 
 export { saved as savedPosts, userPosts };
