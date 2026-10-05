@@ -3,7 +3,8 @@ import mongoose, { type HydratedDocument, type InferSchemaType } from 'mongoose'
 import { Follow } from '../follows/follow.model';
 import { viewUrl } from '../media/media.storage';
 
-export const GENDERS = ['woman', 'man', 'non_binary', 'prefer_not_to_say'] as const;
+/** Sign-up offers man / woman / other; the rest stay valid for existing accounts. */
+export const GENDERS = ['woman', 'man', 'other', 'non_binary', 'prefer_not_to_say'] as const;
 
 /** Instagram's limits. */
 export const BIO_MAX = 150;
