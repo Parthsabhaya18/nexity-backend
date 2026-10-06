@@ -16,7 +16,7 @@ import { userPosts } from '../posts/post.controller';
 import { savedPosts } from '../posts/post.routes';
 import { userReels } from '../reels/reel.routes';
 import { block, blocked, mute, unblock, unmute } from '../safety/safety.controller';
-import { suggestions } from '../search/search.controller';
+import { mentionSuggestions, suggestions } from '../search/search.controller';
 import { updateMe, updatePreferences } from './user.controller';
 import { searchUsers } from './user.search';
 
@@ -26,6 +26,8 @@ usersRouter.use(requireAuth);
 
 usersRouter.get('/me', me);
 usersRouter.get('/suggestions', searchLimiter, suggestions);
+/** The `@` picker in post and reel captions. */
+usersRouter.get('/mention-suggestions', searchLimiter, mentionSuggestions);
 /** People picker for New message. */
 usersRouter.get('/search', searchLimiter, searchUsers);
 usersRouter.patch('/me', profileUpdateLimiter, updateMe);

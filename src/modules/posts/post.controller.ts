@@ -6,6 +6,7 @@ import {
   commentBodySchema,
   createPostSchema,
   cursorQuerySchema,
+  feedQuerySchema,
   postIdParamsSchema,
   updatePostSchema,
 } from './post.schema';
@@ -65,7 +66,7 @@ export const postLikers: RequestHandler = async (req, res) => {
 };
 
 export const feed: RequestHandler = async (req, res) => {
-  const { cursor, limit } = pageOf(req);
+  const { cursor, limit } = feedQuerySchema.parse(req.query);
   res.json(await extra.feed(req.user!, cursor, limit));
 };
 

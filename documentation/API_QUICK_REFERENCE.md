@@ -100,8 +100,8 @@ In development without SMTP, code-sending responses also include `dev_code`.
 | POST | `/stories/:id/reply` |
 | PUT | `/stories/:id/like` |
 | DELETE | `/stories/:id/like` |
-| POST | `/stories/:id/message` (private reply to the author) |
-| GET | `/stories/:id/viewers` (owner only) |
+| POST | `/stories/:id/message` (private reply to the author, sent as a DM with `story_id`; returns `{ id, conversation_id }`) |
+| GET | `/stories/:id/viewers` (owner only; `liked` per row, likers first) |
 | DELETE | `/stories/:id` |
 | POST | `/reels` |
 | GET | `/reels` |

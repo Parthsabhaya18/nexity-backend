@@ -52,6 +52,8 @@ const messageSchema = new mongoose.Schema(
     reply_to_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null },
     /** Replying to one photo or video of an album. */
     reply_to_index: { type: Number, default: null },
+    /** Sent from the story viewer's reply box; the chat shows the story above the text. */
+    story_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Story', default: null },
     /** Generated on the device; makes retries idempotent and matches optimistic bubbles. */
     client_message_id: { type: String, required: true },
     reactions: { type: [reactionSchema], default: [] },

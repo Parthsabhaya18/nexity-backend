@@ -83,6 +83,14 @@ export const commentBodySchema = z.object({
   parent_id: objectIdSchema.optional(),
 });
 
+/** Home feed cursor: the shuffle seed and the last shuffle key already sent. */
+export const FEED_CURSOR = /^([0-9a-f]{8})_([0-9a-f]{16})$/;
+
+export const feedQuerySchema = z.object({
+  cursor: z.string().regex(FEED_CURSOR).optional().catch(undefined),
+  limit: z.coerce.number().int().min(1).max(50).default(20).catch(20),
+});
+
 export const cursorQuerySchema = z.object({
   cursor: objectIdSchema.optional().catch(undefined),
   limit: z.coerce.number().int().min(1).max(50).default(20).catch(20),

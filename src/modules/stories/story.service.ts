@@ -1,6 +1,9 @@
+import { randomUUID } from 'node:crypto';
+
 import mongoose from 'mongoose';
 
 import { ApiError } from '../../utils/ApiError';
+import { openDirectConversation, sendMessage } from '../messages/messages.service';
 import { canViewContent, findVisibleUser, toUserSummaries } from '../follows/follow.service';
 import { audienceIds, isBlockedEither } from '../safety/block.service';
 import { Follow } from '../follows/follow.model';
@@ -108,15 +111,38 @@ export async function createStory(
   return storyMedia(story);
 }
 
-/** Your story first, then people you follow. `seen` is false while any item is unseen. */
-export async function storyTray(viewer: UserDoc) {
-  const follows = await Follow.find({ follower_id: viewer._id, status: 'accepted' })
+/** People who follow the viewer and whom the viewer follows back (both accepted). */
+async function mutualIds(viewerId: mongoose.Types.ObjectId) {
+  const following = await Follow.find({ follower_id: viewerId, status: 'accepted' })
     .select('following_id')
     .lean();
-  const authorIds = await audienceIds(
-    viewer._id,
-    follows.map((f) => f.following_id),
-  );
+  const back = await Follow.find({
+    follower_id: { $in: following.map((f) => f.following_id) },
+    following_id: viewerId,
+    status: 'accepted',
+  })
+    .select('follower_id')
+    .lean();
+  return back.map((f) => f.follower_id);
+}
+
+async function isMutual(a: mongoose.Types.ObjectId, b: mongoose.Types.ObjectId) {
+  const n = await Follow.countDocuments({
+    status: 'accepted',
+    $or: [
+      { follower_id: a, following_id: b },
+      { follower_id: b, following_id: a },
+    ],
+  });
+  return n === 2;
+}
+
+/**
+ * Your story first, then people you and they both follow. Someone you follow
+ * who doesn't follow you back is left out. `seen` is false while any item is unseen.
+ */
+export async function storyTray(viewer: UserDoc) {
+  const authorIds = await audienceIds(viewer._id, await mutualIds(viewer._id));
   const stories = await Story.find({
     author_id: { $in: authorIds },
     expires_at: { $gt: new Date() },
@@ -170,13 +196,7 @@ export async function markViewed(viewer: UserDoc, storyId: string) {
     throw ApiError.notFound('This story is no longer available.');
   }
   if (story.author_id.equals(viewer._id)) return;
-  const author = await findVisibleUser(story.author_id.toHexString());
-  if (await isBlockedEither(viewer._id, author._id)) {
-    throw ApiError.notFound('This story is no longer available.');
-  }
-  if (!(await canViewContent(viewer, author))) {
-    throw ApiError.forbidden('This account is private.', 'PRIVATE_ACCOUNT');
-  }
+  await visibleStory(viewer, storyId);
   await StoryView.updateOne(
     { story_id: story._id, viewer_id: viewer._id },
     { $setOnInsert: { story_id: story._id, viewer_id: viewer._id } },
@@ -274,6 +294,9 @@ async function visibleStory(viewer: UserDoc, storyId: string) {
   if (!(await canViewContent(viewer, author))) {
     throw ApiError.forbidden('This account is private.', 'PRIVATE_ACCOUNT');
   }
+  if (!(await isMutual(viewer._id, author._id))) {
+    throw ApiError.notFound('This story is no longer available.');
+  }
   return story;
 }
 
@@ -306,7 +329,7 @@ export async function replyQuestion(viewer: UserDoc, storyId: string, overlayId:
   return { ok: true };
 }
 
-/** Who viewed the viewer's own story, newest first. */
+/** Who viewed the viewer's own story: people who liked it first, then newest first. */
 export async function storyViewers(viewer: UserDoc, storyId: string) {
   const story = await Story.findOne({
     _id: storyId,
@@ -315,14 +338,16 @@ export async function storyViewers(viewer: UserDoc, storyId: string) {
   });
   if (!story) throw ApiError.notFound('This story is no longer available.');
   const views = await StoryView.find({ story_id: story._id }).sort({ _id: -1 }).limit(200).lean();
+  const likeRows = await StoryLike.find({ story_id: story._id }).select('user_id').lean();
+  const likers = new Set(likeRows.map((r) => r.user_id.toHexString()));
   const users = await User.find({ _id: { $in: views.map((v) => v.viewer_id) }, status: 'active' });
   const summaries = new Map((await toUserSummaries(viewer, users)).map((u) => [u.id, u]));
-  return {
-    items: views.flatMap((v) => {
-      const user = summaries.get(v.viewer_id.toHexString());
-      return user ? [user] : [];
-    }),
-  };
+  const items = views.flatMap((v) => {
+    const user = summaries.get(v.viewer_id.toHexString());
+    return user ? [{ ...user, liked: likers.has(user.id) }] : [];
+  });
+  items.sort((a, b) => Number(b.liked) - Number(a.liked));
+  return { items };
 }
 
 /** Sets the like on a story. Repeating the same request changes nothing. */
@@ -348,18 +373,19 @@ export async function setStoryLike(viewer: UserDoc, storyId: string, want: boole
   return { liked: want };
 }
 
-/** A private reply to a story. The owner is told in their notifications. */
+/** A private reply to a story, sent as a DM to the owner with the story shown above it. */
 export async function messageStory(viewer: UserDoc, storyId: string, body: string) {
   const story = await visibleStory(viewer, storyId);
   if (story.author_id.equals(viewer._id)) {
     throw ApiError.badRequest("You can't reply to your own story.", undefined, 'CANNOT_REPLY_SELF');
   }
-  const message = await StoryMessage.create({ story_id: story._id, sender_id: viewer._id, body });
-  await Notification.create({
-    recipient_id: story.author_id,
-    actor_id: viewer._id,
-    type: 'story_reply',
-    text: ` replied to your story: ${body.replace(/\s+/g, ' ').trim().slice(0, 80)}`,
-  });
-  return { id: message.id as string };
+  const viewerId = viewer.id as string;
+  const { conversation } = await openDirectConversation(viewerId, story.author_id.toHexString());
+  const message = await sendMessage(
+    viewerId,
+    conversation.id,
+    { body, client_message_id: randomUUID() },
+    { storyId: story._id },
+  );
+  return { id: message.id, conversation_id: conversation.id };
 }

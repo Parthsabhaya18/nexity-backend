@@ -14,9 +14,9 @@ Show avatar, bio, stats, posts grid, reels tab.
 - **Header bar:** username (+ lock icon if private). Own profile: **+** (create sheet) and **☰** menu (bottom sheet: Settings, Saved, Follow requests, Groups, Log out shortcut). Other user: back, •••.
 - **Profile header:** avatar (story ring if active story — tap opens `StoryViewer`), stats (posts, followers, following — tap → `Followers`), display name, bio, website link (opens in-app browser).
 - **Actions:** Follow / Requested / Following ▾ / Message; own profile: **Edit profile** (`EditProfile` modal) and **Share profile** (native share sheet with `https://nexity.com/u/:username`).
-- **Tabs** (sticky material top tabs, swipeable): Posts | Reels | Tagged (tagged optional v3).
+- **Tabs** (sticky material top tabs, swipeable): Posts | Reels | Saved (own profile only) | Tagged (tagged optional v3). Swiping left or right on the tab content switches to the next or previous tab; a swipe counts only when it is clearly sideways (≥ 60 dp or a fast fling), so vertical scrolling and taps on tiles still work.
 - **Posts tab:** 3-column square grid; carousel icon on multi-image posts; video icon on video posts (IG grid). Tap → `PostDetail`.
-- **Reels tab:** 3-column 9:16 grid of reel covers with view counts. Tap → `ReelDetail`.
+- **Reels tab:** 3-column 9:16 grid of reel covers with view counts. Tap → opens that reel first in the Reels feed (`popTo('Main', { screen: 'Reels' })`, because the profile screens sit above the bottom tabs in the root stack).
 - Header collapses as the grid scrolls; pull-to-refresh at the top.
 - **•••** (other user): Block, Restrict (Phase 2), Report, Copy profile link, Share profile.
 

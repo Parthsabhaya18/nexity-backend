@@ -2,7 +2,7 @@ import type { RequestHandler } from 'express';
 import { z } from 'zod';
 
 import { objectIdSchema } from '../follows/follow.schema';
-import { searchPlaces, searchUsers, suggestUsers } from './search.service';
+import { mentionUsers, searchPlaces, searchUsers, suggestUsers } from './search.service';
 import {
   addHistory,
   clearHistory,
@@ -21,6 +21,16 @@ const searchQuerySchema = z.object({
 export const suggestions: RequestHandler = async (req, res) => {
   const limit = limitSchema.parse(req.query.limit);
   res.json({ users: await suggestUsers(req.user!, limit) });
+};
+
+const mentionQuerySchema = z.object({
+  q: z.string().trim().max(31).default('').catch(''),
+  limit: z.coerce.number().int().min(1).max(20).default(5).catch(5),
+});
+
+export const mentionSuggestions: RequestHandler = async (req, res) => {
+  const { q, limit } = mentionQuerySchema.parse(req.query);
+  res.json({ users: await mentionUsers(req.user!, q, limit) });
 };
 
 export const search: RequestHandler = async (req, res) => {

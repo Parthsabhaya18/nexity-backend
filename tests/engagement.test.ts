@@ -9,6 +9,8 @@ import { OtpCode } from '../src/modules/auth/otpCode.model';
 import { RefreshToken } from '../src/modules/auth/refreshToken.model';
 import { Follow } from '../src/modules/follows/follow.model';
 import { Media } from '../src/modules/media/media.model';
+import { Conversation } from '../src/modules/messages/conversation.model';
+import { Message } from '../src/modules/messages/message.model';
 import { Notification } from '../src/modules/notifications/notification.model';
 import { Comment, PostLike, PostSave } from '../src/modules/posts/post.engage.model';
 import { Post } from '../src/modules/posts/post.model';
@@ -108,6 +110,8 @@ const MODELS = [
   Block,
   SearchHistory,
   Notification,
+  Conversation,
+  Message,
 ] as unknown as mongoose.Model<unknown>[];
 
 let alice: Account;
@@ -319,6 +323,7 @@ describe('stories', () => {
 
   it('likes a story once and tells the owner', async () => {
     await api(bob).post(`/users/${alice.id}/follow`);
+    await api(alice).post(`/users/${bob.id}/follow`);
     const story = await newStory(alice);
     expect((await api(bob).put(`/stories/${story.id}/like`)).body).toEqual({ liked: true });
     await api(bob).put(`/stories/${story.id}/like`);
@@ -333,20 +338,172 @@ describe('stories', () => {
     expect(after.body.items[0].stories[0].liked_by_me).toBe(false);
   });
 
-  it('sends a private reply and refuses replying to yourself', async () => {
+  it('sends a story reply into the direct chat and refuses replying to yourself', async () => {
     await api(bob).post(`/users/${alice.id}/follow`);
+    await api(alice).post(`/users/${bob.id}/follow`);
     const story = await newStory(alice);
     const sent = await api(bob).post(`/stories/${story.id}/message`, { body: 'love this' });
     expect(sent.status).toBe(201);
-    expect(await StoryMessage.countDocuments({ body: 'love this' })).toBe(1);
-    expect(await Notification.countDocuments({ type: 'story_reply' })).toBe(1);
-    expect((await api(alice).post(`/stories/${story.id}/message`, { body: 'me' })).status).toBe(400);
-    expect((await api(bob).post(`/stories/${story.id}/message`, { body: '  ' })).status).toBe(400);
+    expect(sent.body.conversation_id).toEqual(expect.any(String));
+
+    // Both people see it in Chats, with the story above the text.
+    const inbox = await api(alice).get('/conversations');
+    expect(inbox.body.data).toHaveLength(1);
+    expect(inbox.body.data[0]).toMatchObject({
+      id: sent.body.conversation_id,
+      unread_count: 1,
+      last_message: { body: 'love this' },
+    });
+    const thread = await api(alice).get(`/conversations/${sent.body.conversation_id as string}/messages`);
+    expect(thread.body.data[0]).toMatchObject({
+      id: sent.body.id,
+      body: 'love this',
+      sender_id: bob.id,
+      story: { id: story.id, author_id: alice.id, kind: 'image', url: expect.stringContaining('stories/') },
+    });
+
+    // A second reply reuses the same chat.
+    const again = await api(bob).post(`/stories/${story.id}/message`, { body: 'again' });
+    expect(again.body.conversation_id).toBe(sent.body.conversation_id);
+    expect(await Conversation.countDocuments()).toBe(1);
+    expect(await StoryMessage.countDocuments()).toBe(0);
+
+    // Once the story expires the message stays, the preview says it's gone.
+    await Story.updateOne({ _id: story.id }, { expires_at: new Date(Date.now() - 1000) });
+    const later = await api(bob).get(`/conversations/${sent.body.conversation_id as string}/messages`);
+    expect(later.body.data.map((m: { body: string }) => m.body)).toEqual(['again', 'love this']);
+    expect(later.body.data[1].story).toEqual({ id: story.id, author_id: null, kind: null, url: null });
+
+    const fresh = await newStory(alice);
+    expect((await api(alice).post(`/stories/${fresh.id}/message`, { body: 'me' })).status).toBe(400);
+    expect((await api(bob).post(`/stories/${fresh.id}/message`, { body: '  ' })).status).toBe(400);
+    // Normal messages carry no story.
+    const plain = await api(bob).post(`/conversations/${sent.body.conversation_id as string}/messages`, {
+      body: 'hi',
+      client_message_id: '9b2f4c1e-7a0d-4e5b-8c3f-1d2e3f4a5b6c',
+    });
+    expect(plain.status).toBe(201);
+    expect(plain.body.story).toBeNull();
+  });
+
+  it('lists people who liked a story first in the viewers sheet', async () => {
+    for (const viewer of [bob, cara]) {
+      await api(viewer).post(`/users/${alice.id}/follow`);
+      await api(alice).post(`/users/${viewer.id}/follow`);
+    }
+    const story = await newStory(alice);
+    await api(bob).post(`/stories/${story.id}/view`);
+    await api(cara).post(`/stories/${story.id}/view`);
+    // Newest first, so cara leads until bob likes it.
+    const before = await api(alice).get(`/stories/${story.id}/viewers`);
+    expect(before.body.items.map((u: { username: string; liked: boolean }) => [u.username, u.liked])).toEqual([
+      ['cara', false],
+      ['bob.smith', false],
+    ]);
+    await api(bob).put(`/stories/${story.id}/like`);
+    const after = await api(alice).get(`/stories/${story.id}/viewers`);
+    expect(after.body.items.map((u: { username: string; liked: boolean }) => [u.username, u.liked])).toEqual([
+      ['bob.smith', true],
+      ['cara', false],
+    ]);
+    expect((await api(bob).get(`/stories/${story.id}/viewers`)).status).toBe(404);
   });
 
   it('blocks non-followers of private accounts from liking', async () => {
     await api(alice).patch('/users/me', { is_private: true });
     const story = await newStory(alice);
     expect((await api(cara).put(`/stories/${story.id}/like`)).status).toBe(403);
+  });
+});
+
+describe('reels feed order', () => {
+  it('pages through a random order without repeating, then loops forever, and reshuffles on a fresh load', async () => {
+    await api(bob).post(`/users/${alice.id}/follow`);
+    const created: string[] = [];
+    for (let i = 0; i < 8; i++) {
+      const res = await api(alice).post('/reels', { video_media_id: await reelMedia(alice) });
+      created.push(res.body.id as string);
+    }
+    const walk = async (pages = 3) => {
+      const seen: string[] = [];
+      let cursor: string | null = null;
+      for (let p = 0; p < pages; p++) {
+        const res = await api(bob).get(`/reels?limit=3${cursor ? `&cursor=${cursor}` : ''}`);
+        expect(res.status).toBe(200);
+        seen.push(...res.body.items.map((r: { id: string }) => r.id));
+        cursor = res.body.next_cursor as string | null;
+        expect(cursor).toMatch(/^[0-9a-f]{8}_[0-9a-f]{16}$/);
+      }
+      return seen;
+    };
+    // 3 + 3 + 2: one full round, each reel once.
+    const first = await walk();
+    expect(first).toHaveLength(8);
+    expect([...first].sort()).toEqual([...created].sort());
+
+    // The feed never ends: after the round it starts over with every reel again.
+    const looped = await walk(6);
+    expect(looped).toHaveLength(16);
+    expect([...looped.slice(8)].sort()).toEqual([...created].sort());
+
+    const orders = new Set([first.join()]);
+    for (let i = 0; i < 6; i++) orders.add((await walk()).join());
+    expect(orders.size).toBeGreaterThan(1);
+
+    // A broken cursor starts a new order instead of failing.
+    expect((await api(bob).get('/reels?cursor=nope')).status).toBe(200);
+  });
+
+  it('keeps blocked people and private accounts out of the reels feed', async () => {
+    await api(cara).patch('/users/me', { is_private: true });
+    await api(cara).post('/reels', { video_media_id: await reelMedia(cara) });
+    const mine = await api(alice).post('/reels', { video_media_id: await reelMedia(alice) });
+    await api(bob).post(`/users/${alice.id}/follow`);
+    const feed = await api(bob).get('/reels');
+    expect(feed.body.items.map((r: { id: string }) => r.id)).toEqual([mine.body.id]);
+    await api(bob).post(`/users/${alice.id}/block`);
+    expect((await api(bob).get('/reels')).body.items).toEqual([]);
+  });
+});
+
+describe('@mention suggestions', () => {
+  const names = (res: { body: { users: { username: string }[] } }) =>
+    res.body.users.map((u) => u.username);
+
+  it('lists people you follow first for a bare @, then others', async () => {
+    const dan = await signUp('dan');
+    await api(alice).post(`/users/${cara.id}/follow`);
+    await api(alice).post(`/users/${dan.id}/follow`);
+    const res = await api(alice).get('/users/mention-suggestions?q=&limit=5');
+    expect(res.status).toBe(200);
+    // Latest follow first, then everyone else; never yourself.
+    expect(names(res)).toEqual(['dan', 'cara', 'bob.smith']);
+    expect(names(await api(alice).get('/users/mention-suggestions?limit=2'))).toEqual(['dan', 'cara']);
+  });
+
+  it('puts usernames starting with the text first and narrows as you type', async () => {
+    await signUp('rabo');
+    await signUp('bobby');
+    const b = await api(alice).get('/users/mention-suggestions?q=b');
+    expect(names(b).slice(0, 2)).toEqual(['bobby', 'bob.smith']);
+    expect(names(b)).toContain('rabo');
+    expect(names(await api(alice).get('/users/mention-suggestions?q=@bob.'))).toEqual(['bob.smith']);
+    expect(names(await api(alice).get('/users/mention-suggestions?q=zzz'))).toEqual([]);
+  });
+
+  it('never suggests blocked people', async () => {
+    await api(cara).post(`/users/${alice.id}/block`);
+    expect(names(await api(alice).get('/users/mention-suggestions?q=ca'))).toEqual([]);
+    expect(names(await api(alice).get('/users/mention-suggestions'))).not.toContain('cara');
+    expect((await request(app).get('/api/v1/users/mention-suggestions')).status).toBe(401);
+  });
+
+  it('only counts @name at the start, after a space or a bracket', async () => {
+    const post = await newPost(alice, {
+      caption: 'wow...@bob.smith wow…@cara mail@cara (@cara) and @bob.smith',
+    });
+    expect([...(post.mentions as string[])].sort()).toEqual(['bob.smith', 'cara']);
+    const none = await newPost(alice, { caption: 'great…@bob.smith' });
+    expect(none.mentions).toEqual([]);
   });
 });
