@@ -14,7 +14,7 @@ import {
 } from '../follows/follow.controller';
 import { userPosts } from '../posts/post.controller';
 import { savedPosts } from '../posts/post.routes';
-import { userReels } from '../reels/reel.routes';
+import { savedAll, userReels } from '../reels/reel.routes';
 import { block, blocked, mute, unblock, unmute } from '../safety/safety.controller';
 import { mentionSuggestions, suggestions } from '../search/search.controller';
 import { updateMe, updatePreferences } from './user.controller';
@@ -33,6 +33,8 @@ usersRouter.get('/search', searchLimiter, searchUsers);
 usersRouter.patch('/me', profileUpdateLimiter, updateMe);
 usersRouter.patch('/me/preferences', profileUpdateLimiter, updatePreferences);
 usersRouter.get('/me/saved-posts', savedPosts);
+/** Saved posts and reels together, for the Saved grid and viewer. */
+usersRouter.get('/me/saved', savedAll);
 usersRouter.get('/me/blocked', blocked);
 usersRouter.get('/:userId/posts', userPosts);
 usersRouter.get('/:userId/reels', userReels);

@@ -5,6 +5,8 @@ import { ApiError } from '../../utils/ApiError';
 import { Media } from '../media/media.model';
 import type { MediaKind } from '../media/media.rules';
 import { viewUrl } from '../media/media.storage';
+import { Post } from '../posts/post.model';
+import { Reel } from '../reels/reel.model';
 import { Story } from '../stories/story.model';
 import {
   PUBLIC_USER_FIELDS,
@@ -131,14 +133,50 @@ export function groupReactions(list: readonly ReactionSource[] | null | undefine
 /** The story a message replied to, or `url: null` once it expired or was deleted. */
 export type StoryRef = { id: string; author_id: string | null; kind: string | null; url: string | null };
 
+type ShareKind = 'post' | 'reel' | 'profile';
+
+/** Card for a shared post, reel or profile; `available` is false once it was deleted. */
+export type SharedRef = {
+  kind: ShareKind;
+  id: string;
+  available: boolean;
+  /** The post/reel author, or the shared account itself. */
+  author: { id: string; username: string; avatar_url: string | null } | null;
+  caption: string;
+  /** Photo of the post, or the reel's cover; null when there is only a video. */
+  image_url: string | null;
+  video_url: string | null;
+  aspect_ratio: number;
+  /** Shared accounts only: name and their latest posts (empty for private accounts). */
+  profile?: {
+    display_name: string;
+    is_private: boolean;
+    grid: { url: string; video: boolean }[];
+  };
+};
+
+/** Posts are keyed with the photo/video that was on screen when shared. */
+const sharedKey = (kind: ShareKind, id: string, index = 0) =>
+  kind === 'post' ? `post:${id}:${index}` : `${kind}:${id}`;
+
+const PROFILE_GRID = 6;
+
 export function toMessageDto(
   m: MessageAttrs,
   replies: Map<string, ReplySource> = new Map(),
   stories: Map<string, StoryRef> = new Map(),
+  shares: Map<string, SharedRef> = new Map(),
 ) {
   const deleted = Boolean(m.deleted_at);
   const reply = m.reply_to_id ? replies.get(m.reply_to_id.toString()) : undefined;
   const storyId = m.story_id ? m.story_id.toString() : null;
+  const share = m.post_id
+    ? { kind: 'post' as const, id: m.post_id.toString() }
+    : m.reel_id
+      ? { kind: 'reel' as const, id: m.reel_id.toString() }
+      : m.profile_id
+        ? { kind: 'profile' as const, id: m.profile_id.toString() }
+        : null;
   return {
     id: m._id.toString(),
     conversation_id: m.conversation_id.toString(),
@@ -165,6 +203,18 @@ export function toMessageDto(
       storyId && !deleted
         ? (stories.get(storyId) ?? { id: storyId, author_id: null, kind: null, url: null })
         : null,
+    shared:
+      share && !deleted
+        ? (shares.get(sharedKey(share.kind, share.id, m.post_media_index ?? 0)) ?? {
+            ...share,
+            available: false,
+            author: null,
+            caption: '',
+            image_url: null,
+            video_url: null,
+            aspect_ratio: 1,
+          })
+        : null,
     client_message_id: m.client_message_id,
     reactions: deleted ? [] : groupReactions(m.reactions as ReactionSource[]),
     edited_at: m.edited_at && !deleted ? m.edited_at.toISOString() : null,
@@ -186,8 +236,103 @@ async function toMessageDtos(rows: MessageAttrs[]) {
   const signedReplies = await Promise.all(replies.map(withFreshMediaUrl));
   const byId = new Map(signedReplies.map((r) => [r._id.toString(), r]));
   const signed = await Promise.all(rows.map(withFreshMediaUrl));
-  const stories = await storyRefs(rows);
-  return signed.map((m) => toMessageDto(m, byId, stories));
+  const [stories, shares] = await Promise.all([storyRefs(rows), sharedRefs(rows)]);
+  return signed.map((m) => toMessageDto(m, byId, stories, shares));
+}
+
+async function sharedRefs(rows: MessageAttrs[]) {
+  const postIds = [...new Set(rows.flatMap((m) => (m.post_id ? [m.post_id.toString()] : [])))];
+  const reelIds = [...new Set(rows.flatMap((m) => (m.reel_id ? [m.reel_id.toString()] : [])))];
+  const profileIds = [...new Set(rows.flatMap((m) => (m.profile_id ? [m.profile_id.toString()] : [])))];
+  const refs = new Map<string, SharedRef>();
+  if (!postIds.length && !reelIds.length && !profileIds.length) return refs;
+  const [posts, reels] = await Promise.all([
+    postIds.length ? Post.find({ _id: { $in: postIds }, deleted_at: null }).lean() : [],
+    reelIds.length ? Reel.find({ _id: { $in: reelIds }, deleted_at: null }).lean() : [],
+  ]);
+  const users = await loadUsers([
+    ...posts.map((p) => p.author_id),
+    ...reels.map((r) => r.author_id),
+    ...profileIds.map((id) => new Types.ObjectId(id)),
+  ]);
+  const accounts = new Map(
+    (profileIds.length
+      ? await User.find({ _id: { $in: profileIds } }).select('_id status is_private display_name').lean()
+      : []
+    ).map((u) => [u._id.toString(), u]),
+  );
+  const authorOf = (id: Types.ObjectId) => {
+    const u = users.get(id.toString());
+    if (!u) return null;
+    const dto = toPublicUserDto(u);
+    return { id: dto.id, username: dto.username, avatar_url: dto.avatar_url };
+  };
+  const indexes = new Map<string, Set<number>>();
+  for (const m of rows) {
+    if (!m.post_id) continue;
+    const id = m.post_id.toString();
+    indexes.set(id, (indexes.get(id) ?? new Set()).add(m.post_media_index ?? 0));
+  }
+  await Promise.all([
+    ...posts.flatMap((p) =>
+      [...(indexes.get(p._id.toString()) ?? [0])].map(async (index) => {
+        const shown = p.media[index] ?? p.media[0];
+        const url = shown ? await viewUrl(shown.key) : null;
+        refs.set(sharedKey('post', p._id.toString(), index), {
+          kind: 'post',
+          id: p._id.toString(),
+          available: true,
+          author: authorOf(p.author_id),
+          caption: p.caption ?? '',
+          image_url: shown?.kind === 'image' ? url : null,
+          video_url: shown?.kind === 'video' ? url : null,
+          aspect_ratio: p.aspect_ratio ?? 1,
+        });
+      }),
+    ),
+    ...reels.map(async (r) => {
+      refs.set(sharedKey('reel', r._id.toString()), {
+        kind: 'reel',
+        id: r._id.toString(),
+        available: true,
+        author: authorOf(r.author_id),
+        caption: r.caption ?? '',
+        image_url: r.cover_key ? await viewUrl(r.cover_key) : null,
+        video_url: await viewUrl(r.video_key),
+        aspect_ratio: 9 / 16,
+      });
+    }),
+    ...profileIds.map(async (id) => {
+      const author = authorOf(new Types.ObjectId(id));
+      const user = accounts.get(id);
+      if (!author || !user || user.status !== 'active') return;
+      const latest = user.is_private
+        ? []
+        : await Post.find({ author_id: user._id, deleted_at: null })
+            .sort({ _id: -1 })
+            .limit(PROFILE_GRID)
+            .select('media')
+            .lean();
+      const grid = await Promise.all(
+        latest.flatMap((p) => {
+          const first = p.media[0];
+          return first ? [viewUrl(first.key).then((url) => ({ url, video: first.kind === 'video' }))] : [];
+        }),
+      );
+      refs.set(sharedKey('profile', id), {
+        kind: 'profile',
+        id,
+        available: true,
+        author,
+        caption: '',
+        image_url: null,
+        video_url: null,
+        aspect_ratio: 1,
+        profile: { display_name: user.display_name ?? '', is_private: Boolean(user.is_private), grid },
+      });
+    }),
+  ]);
+  return refs;
 }
 
 async function storyRefs(rows: MessageAttrs[]) {
@@ -473,7 +618,13 @@ export async function sendMessage(
   userId: string,
   conversationId: string,
   input: SendMessageInput,
-  { storyId = null }: { storyId?: Types.ObjectId | null } = {},
+  {
+    storyId = null,
+    share = null,
+  }: {
+    storyId?: Types.ObjectId | null;
+    share?: { kind: ShareKind; id: Types.ObjectId; index?: number } | null;
+  } = {},
 ) {
   const convo = await requireMembership(conversationId, userId);
   const me = oid(userId);
@@ -528,7 +679,15 @@ export async function sendMessage(
     const doc = await Message.create({
       conversation_id: convo._id,
       sender_id: me,
-      type: album.length ? 'album' : upload ? upload.type : gif ? gif.kind : 'text',
+      type: share
+        ? (`share_${share.kind}` as const)
+        : album.length
+          ? 'album'
+          : upload
+            ? upload.type
+            : gif
+              ? gif.kind
+              : 'text',
       body: input.body,
       media_items: album,
       reply_to_index: replyIndex,
@@ -546,6 +705,10 @@ export async function sendMessage(
           : null,
       reply_to_id: input.reply_to_id ?? null,
       story_id: storyId,
+      post_id: share?.kind === 'post' ? share.id : null,
+      reel_id: share?.kind === 'reel' ? share.id : null,
+      profile_id: share?.kind === 'profile' ? share.id : null,
+      post_media_index: share?.kind === 'post' ? (share.index ?? 0) : 0,
       client_message_id: input.client_message_id,
     });
     message = doc.toObject() as MessageAttrs;

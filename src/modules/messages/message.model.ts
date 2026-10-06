@@ -54,6 +54,13 @@ const messageSchema = new mongoose.Schema(
     reply_to_index: { type: Number, default: null },
     /** Sent from the story viewer's reply box; the chat shows the story above the text. */
     story_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Story', default: null },
+    /** The shared post or reel of a `share_post` / `share_reel` message. */
+    post_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Post', default: null },
+    /** Which photo/video of a multi-photo post was on screen when it was shared. */
+    post_media_index: { type: Number, default: 0, min: 0 },
+    reel_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Reel', default: null },
+    /** The shared account of a `share_profile` message. */
+    profile_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     /** Generated on the device; makes retries idempotent and matches optimistic bubbles. */
     client_message_id: { type: String, required: true },
     reactions: { type: [reactionSchema], default: [] },

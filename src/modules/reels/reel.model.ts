@@ -54,6 +54,17 @@ const reelLikeSchema = new mongoose.Schema(
 );
 reelLikeSchema.index({ user_id: 1, reel_id: 1 }, { unique: true });
 
+const reelSaveSchema = new mongoose.Schema(
+  {
+    user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    reel_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Reel', required: true },
+  },
+  { collection: 'reel_saves', timestamps: { createdAt: 'created_at', updatedAt: false } as const },
+);
+reelSaveSchema.index({ user_id: 1, reel_id: 1 }, { unique: true });
+reelSaveSchema.index({ user_id: 1, _id: -1 });
+
 export type ReelDoc = HydratedDocument<InferSchemaType<typeof reelSchema>>;
 export const Reel = mongoose.model('Reel', reelSchema);
 export const ReelLike = mongoose.model('ReelLike', reelLikeSchema);
+export const ReelSave = mongoose.model('ReelSave', reelSaveSchema);

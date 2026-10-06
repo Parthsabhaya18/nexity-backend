@@ -9,8 +9,12 @@ import { audienceIds, isBlockedEither } from '../safety/block.service';
 import { Follow } from '../follows/follow.model';
 import { Media } from '../media/media.model';
 import { deleteObjects, viewUrl } from '../media/media.storage';
-import { User, type UserDoc } from '../users/user.model';
+import { avatarUrlOf, User, type UserDoc } from '../users/user.model';
 import { Notification } from '../notifications/notification.model';
+import { Post } from '../posts/post.model';
+import { getPost } from '../posts/post.service';
+import { Reel } from '../reels/reel.model';
+import { getReel } from '../reels/reel.service';
 import {
   Story,
   STORY_TTL_MS,
@@ -51,6 +55,41 @@ function withVotes(overlays: StoryOverlay[], counts?: VoteCounts) {
   });
 }
 
+type SharedDoc = NonNullable<StoryDoc['shared']>;
+
+async function sharedOf(shared: SharedDoc) {
+  const author = shared.author_id
+    ? await User.findById(shared.author_id).select('avatar_key avatar_url').lean()
+    : null;
+  return {
+    kind: shared.kind,
+    id: shared.id.toHexString(),
+    username: shared.username,
+    avatar_url: author ? await avatarUrlOf(author) : null,
+    caption: shared.caption ?? '',
+    aspect_ratio: shared.aspect_ratio ?? 1,
+    layout: shared.layout
+      ? {
+          x: shared.layout.x ?? 0.5,
+          y: shared.layout.y ?? 0.5,
+          scale: shared.layout.scale ?? 1,
+          style: shared.layout.style ?? 'media',
+        }
+      : { x: 0.5, y: 0.5, scale: 1, style: 'media' as const },
+  };
+}
+
+function checkOverlays(overlays: StoryOverlay[]) {
+  for (const overlay of overlays) {
+    if (overlay.type === 'quiz' && overlay.answer >= overlay.options.length) {
+      throw ApiError.badRequest('Pick a quiz answer that exists.', { field: 'overlays' }, 'INVALID_OVERLAY');
+    }
+    if (overlay.type === 'link' && !/^https?:\/\//i.test(overlay.url)) {
+      throw ApiError.badRequest('Links have to start with http:// or https://.', { field: 'overlays' }, 'INVALID_OVERLAY');
+    }
+  }
+}
+
 async function storyMedia(story: StoryDoc, counts?: VoteCounts) {
   return {
     id: story.id as string,
@@ -63,6 +102,7 @@ async function storyMedia(story: StoryDoc, counts?: VoteCounts) {
     location_lat: story.location_lat ?? null,
     location_lng: story.location_lng ?? null,
     overlays: withVotes((story.overlays ?? []) as StoryOverlay[], counts),
+    shared: story.shared ? await sharedOf(story.shared) : null,
     created_at: (story.get('created_at') as Date).toISOString(),
     expires_at: story.expires_at.toISOString(),
   };
@@ -78,14 +118,7 @@ export async function createStory(
     overlays: StoryOverlay[];
   },
 ) {
-  for (const overlay of input.overlays) {
-    if (overlay.type === 'quiz' && overlay.answer >= overlay.options.length) {
-      throw ApiError.badRequest('Pick a quiz answer that exists.', { field: 'overlays' }, 'INVALID_OVERLAY');
-    }
-    if (overlay.type === 'link' && !/^https?:\/\//i.test(overlay.url)) {
-      throw ApiError.badRequest('Links have to start with http:// or https://.', { field: 'overlays' }, 'INVALID_OVERLAY');
-    }
-  }
+  checkOverlays(input.overlays);
   const media = await Media.findOne({ _id: input.media_id, owner_id: author._id });
   if (!media || media.status !== 'ready' || media.purpose !== 'story' || media.kind === 'audio') {
     throw ApiError.badRequest(
@@ -108,6 +141,83 @@ export async function createStory(
     overlays: input.overlays,
     expires_at: new Date(Date.now() + STORY_TTL_MS),
   });
+  return storyMedia(story);
+}
+
+/** Adds a post or reel the viewer can see to their story, reusing its media. */
+export async function createSharedStory(
+  author: UserDoc,
+  input: {
+    kind: 'post' | 'reel';
+    id: string;
+    /** Which photo/video of a multi-photo post to put on the story. */
+    media_index?: number;
+    overlays?: StoryOverlay[];
+    location_name?: string;
+    location_lat?: number | null;
+    location_lng?: number | null;
+    layout?: { x: number; y: number; scale: number; style: 'media' | 'card' };
+  },
+) {
+  let story: StoryDoc;
+  const overlays = input.overlays ?? [];
+  checkOverlays(overlays);
+  const extra = {
+    overlays,
+    location_name: input.location_name ?? '',
+    location_lat: input.location_lat ?? null,
+    location_lng: input.location_lng ?? null,
+    expires_at: new Date(Date.now() + STORY_TTL_MS),
+  };
+  const layout = input.layout ?? null;
+  if (input.kind === 'post') {
+    const dto = await getPost(author, input.id);
+    const post = await Post.findById(input.id);
+    const first = post?.media[input.media_index ?? 0] ?? post?.media[0];
+    if (!post || !first) throw ApiError.notFound('This post is no longer available.');
+    story = await Story.create({
+      author_id: author._id,
+      media_id: first.media_id,
+      key: first.key,
+      kind: first.kind,
+      width: first.width,
+      height: first.height,
+      duration_ms: (first as { duration_ms?: number | null }).duration_ms ?? null,
+      shared: {
+        kind: 'post',
+        id: post._id,
+        username: dto.author.username,
+        aspect_ratio: post.aspect_ratio ?? 1,
+        author_id: post.author_id,
+        caption: (post.caption ?? '').slice(0, 300),
+        layout,
+      },
+      ...extra,
+    });
+  } else {
+    const dto = await getReel(author, input.id);
+    const reel = await Reel.findById(input.id);
+    if (!reel) throw ApiError.notFound('This reel is no longer available.');
+    story = await Story.create({
+      author_id: author._id,
+      media_id: reel.video_media_id,
+      key: reel.video_key,
+      kind: 'video',
+      width: reel.width,
+      height: reel.height,
+      duration_ms: reel.duration_ms,
+      shared: {
+        kind: 'reel',
+        id: reel._id,
+        username: dto.author.username,
+        aspect_ratio: 9 / 16,
+        author_id: reel.author_id,
+        caption: (reel.caption ?? '').slice(0, 300),
+        layout: layout ? { ...layout, style: 'media' as const } : null,
+      },
+      ...extra,
+    });
+  }
   return storyMedia(story);
 }
 
@@ -156,6 +266,8 @@ export async function storyTray(viewer: UserDoc) {
     .select('story_id')
     .lean();
   const seen = new Set(seenRows.map((r) => r.story_id.toHexString()));
+  const seenBy = (s: StoryDoc) =>
+    s.author_id.equals(viewer._id) ? !!s.owner_seen : seen.has(s.id as string);
   const counts = await voteCounts(stories);
   const likeRows = await StoryLike.find({
     user_id: viewer._id,
@@ -176,11 +288,11 @@ export async function storyTray(viewer: UserDoc) {
   const items = await Promise.all(
     [...groups.entries()].map(async ([id, list]) => ({
       user: summaries.get(id)!,
-      seen: list.every((s) => seen.has(s.id as string) || s.author_id.equals(viewer._id)),
+      seen: list.every((s) => seenBy(s)),
       stories: await Promise.all(
         list.map(async (s) => ({
           ...(await storyMedia(s, counts.get(s.id as string))),
-          seen: seen.has(s.id as string) || s.author_id.equals(viewer._id),
+          seen: seenBy(s),
           liked_by_me: liked.has(s.id as string),
         })),
       ),
@@ -195,7 +307,10 @@ export async function markViewed(viewer: UserDoc, storyId: string) {
   if (!story || story.expires_at <= new Date()) {
     throw ApiError.notFound('This story is no longer available.');
   }
-  if (story.author_id.equals(viewer._id)) return;
+  if (story.author_id.equals(viewer._id)) {
+    if (!story.owner_seen) await Story.updateOne({ _id: story._id }, { $set: { owner_seen: true } });
+    return;
+  }
   await visibleStory(viewer, storyId);
   await StoryView.updateOne(
     { story_id: story._id, viewer_id: viewer._id },
@@ -210,7 +325,12 @@ export async function deleteStory(viewer: UserDoc, storyId: string) {
   await removeStories([story]);
 }
 
-type StoryFiles = { _id: mongoose.Types.ObjectId; key: string; media_id: mongoose.Types.ObjectId };
+type StoryFiles = {
+  _id: mongoose.Types.ObjectId;
+  key: string;
+  media_id: mongoose.Types.ObjectId;
+  shared?: unknown;
+};
 
 /**
  * Deletes the files from S3 first, then everything attached to the stories, and
@@ -219,9 +339,11 @@ type StoryFiles = { _id: mongoose.Types.ObjectId; key: string; media_id: mongoos
 async function removeStories(stories: StoryFiles[]) {
   if (!stories.length) return;
   const ids = stories.map((s) => s._id);
-  await deleteObjects(stories.map((s) => s.key));
+  // A shared post or reel keeps its files; only the story goes.
+  const own = stories.filter((s) => !s.shared);
+  await deleteObjects(own.map((s) => s.key));
   await Promise.all([
-    Media.deleteMany({ _id: { $in: stories.map((s) => s.media_id) } }),
+    Media.deleteMany({ _id: { $in: own.map((s) => s.media_id) } }),
     StoryView.deleteMany({ story_id: { $in: ids } }),
     StoryLike.deleteMany({ story_id: { $in: ids } }),
     StoryPollVote.deleteMany({ story_id: { $in: ids } }),
@@ -241,7 +363,7 @@ export async function purgeExpiredStories(now = new Date()) {
   let stories = 0;
   for (;;) {
     const batch = await Story.find({ expires_at: { $lte: now } })
-      .select('_id key media_id')
+      .select('_id key media_id shared')
       .limit(PURGE_BATCH)
       .lean<StoryFiles[]>();
     if (!batch.length) break;
