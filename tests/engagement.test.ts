@@ -417,28 +417,34 @@ describe('stories', () => {
 });
 
 describe('reels feed order', () => {
-  it('pages through a random order without repeating, and reshuffles on a fresh load', async () => {
+  it('pages through a random order without repeating, then loops forever, and reshuffles on a fresh load', async () => {
     await api(bob).post(`/users/${alice.id}/follow`);
     const created: string[] = [];
     for (let i = 0; i < 8; i++) {
       const res = await api(alice).post('/reels', { video_media_id: await reelMedia(alice) });
       created.push(res.body.id as string);
     }
-    const walk = async () => {
+    const walk = async (pages = 3) => {
       const seen: string[] = [];
       let cursor: string | null = null;
-      do {
+      for (let p = 0; p < pages; p++) {
         const res = await api(bob).get(`/reels?limit=3${cursor ? `&cursor=${cursor}` : ''}`);
         expect(res.status).toBe(200);
         seen.push(...res.body.items.map((r: { id: string }) => r.id));
         cursor = res.body.next_cursor as string | null;
-        if (cursor) expect(cursor).toMatch(/^[0-9a-f]{8}_[0-9a-f]{16}$/);
-      } while (cursor);
+        expect(cursor).toMatch(/^[0-9a-f]{8}_[0-9a-f]{16}$/);
+      }
       return seen;
     };
+    // 3 + 3 + 2: one full round, each reel once.
     const first = await walk();
     expect(first).toHaveLength(8);
     expect([...first].sort()).toEqual([...created].sort());
+
+    // The feed never ends: after the round it starts over with every reel again.
+    const looped = await walk(6);
+    expect(looped).toHaveLength(16);
+    expect([...looped.slice(8)].sort()).toEqual([...created].sort());
 
     const orders = new Set([first.join()]);
     for (let i = 0; i < 6; i++) orders.add((await walk()).join());

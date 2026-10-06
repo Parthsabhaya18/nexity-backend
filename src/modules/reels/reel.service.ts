@@ -174,8 +174,8 @@ const shuffleKey = (seed: string, id: string) =>
 export async function reelFeed(viewer: UserDoc, cursor: string | undefined, limit: number) {
   const take = pageOf(limit);
   const match = cursor ? FEED_CURSOR.exec(cursor) : null;
-  const seed = match?.[1] ?? randomBytes(4).toString('hex');
-  const after = match?.[2] ?? '';
+  let seed = match?.[1] ?? randomBytes(4).toString('hex');
+  let after = match?.[2] ?? '';
   const follows = await Follow.find({ follower_id: viewer._id, status: 'accepted' })
     .select('following_id')
     .lean();
@@ -187,10 +187,17 @@ export async function reelFeed(viewer: UserDoc, cursor: string | undefined, limi
     .limit(FEED_POOL)
     .select('_id')
     .lean();
-  const ordered = pool
-    .map((r) => ({ id: r._id, key: shuffleKey(seed, r._id.toHexString()) }))
-    .filter((r) => r.key > after)
-    .sort((a, b) => (a.key < b.key ? -1 : 1));
+  const shuffled = (s: string) =>
+    pool
+      .map((r) => ({ id: r._id, key: shuffleKey(s, r._id.toHexString()) }))
+      .sort((a, b) => (a.key < b.key ? -1 : 1));
+  let ordered = shuffled(seed).filter((r) => r.key > after);
+  if (!ordered.length && pool.length) {
+    // Every reel has been shown: the feed never ends, it starts a new random round.
+    seed = randomBytes(4).toString('hex');
+    after = '';
+    ordered = shuffled(seed);
+  }
   const page = ordered.slice(0, take);
 
   const docs = await Reel.find({ _id: { $in: page.map((r) => r.id) } });
@@ -198,7 +205,7 @@ export async function reelFeed(viewer: UserDoc, cursor: string | undefined, limi
   const reels = page.flatMap((r) => byId.get(r.id.toHexString()) ?? []);
   return {
     items: await present(viewer, reels),
-    next_cursor: ordered.length > take ? `${seed}_${page[page.length - 1]!.key}` : null,
+    next_cursor: page.length ? `${seed}_${page[page.length - 1]!.key}` : null,
   };
 }
 
