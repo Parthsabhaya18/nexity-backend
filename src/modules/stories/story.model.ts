@@ -18,6 +18,39 @@ const storySchema = new mongoose.Schema(
     location_lng: { type: Number, default: null },
     /** Text, stickers, drawing and interactive stickers. Coordinates are 0–1. */
     overlays: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    /** The author has watched it. Kept apart from `story_views` so they never list themselves as a viewer. */
+    owner_seen: { type: Boolean, default: false },
+    /**
+     * Set when the story is a post or reel added from its share sheet. `key` and
+     * `media_id` then belong to that post or reel and are never deleted with the story.
+     */
+    shared: {
+      type: new mongoose.Schema(
+        {
+          kind: { type: String, enum: ['post', 'reel'], required: true },
+          id: { type: mongoose.Schema.Types.ObjectId, required: true },
+          username: { type: String, required: true },
+          aspect_ratio: { type: Number, default: 1 },
+          author_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+          caption: { type: String, default: '', maxlength: 300 },
+          /** Where the author placed the post/reel: centre (0–1), zoom, and plain photo or full post card. */
+          layout: {
+            type: new mongoose.Schema(
+              {
+                x: { type: Number, default: 0.5 },
+                y: { type: Number, default: 0.5 },
+                scale: { type: Number, default: 1 },
+                style: { type: String, enum: ['media', 'card'], default: 'media' },
+              },
+              { _id: false },
+            ),
+            default: null,
+          },
+        },
+        { _id: false },
+      ),
+      default: null,
+    },
     expires_at: { type: Date, required: true },
   },
   {

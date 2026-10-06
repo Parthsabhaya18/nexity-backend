@@ -14,7 +14,7 @@ import { Message } from '../src/modules/messages/message.model';
 import { Notification } from '../src/modules/notifications/notification.model';
 import { Comment, PostLike, PostSave } from '../src/modules/posts/post.engage.model';
 import { Post } from '../src/modules/posts/post.model';
-import { Reel, ReelLike } from '../src/modules/reels/reel.model';
+import { Reel, ReelLike, ReelSave } from '../src/modules/reels/reel.model';
 import { Block } from '../src/modules/safety/block.model';
 import { SearchHistory } from '../src/modules/search/searchHistory.model';
 import { Story, StoryLike, StoryMessage } from '../src/modules/stories/story.model';
@@ -104,6 +104,7 @@ const MODELS = [
   Comment,
   Reel,
   ReelLike,
+  ReelSave,
   Story,
   StoryLike,
   StoryMessage,
@@ -464,6 +465,42 @@ describe('reels feed order', () => {
     await api(bob).post(`/users/${alice.id}/block`);
     expect((await api(bob).get('/reels')).body.items).toEqual([]);
   });
+
+  it("leaves the viewer's own reels out of the feed but keeps them on their profile", async () => {
+    const own = await api(alice).post('/reels', { video_media_id: await reelMedia(alice) });
+    expect((await api(alice).get('/reels')).body.items).toEqual([]);
+    const grid = await api(alice).get(`/users/${alice.id}/reels`);
+    expect(grid.body.items.map((r: { id: string }) => r.id)).toEqual([own.body.id]);
+  });
+
+  it('saves and unsaves a reel, listed with saved posts newest save first', async () => {
+    const reel = await api(alice).post('/reels', { video_media_id: await reelMedia(alice) });
+    const id = reel.body.id as string;
+    const post = await newPost(alice);
+    await api(bob).post(`/posts/${post.id}/save`);
+    const saved = await api(bob).post(`/reels/${id}/save`);
+    expect(saved.body).toMatchObject({ saved: true, reel: { saved_by_me: true } });
+    expect((await api(bob).get(`/reels/${id}`)).body.saved_by_me).toBe(true);
+    const list = await api(bob).get('/users/me/saved');
+    expect(
+      list.body.items.map((e: { kind: string; post?: { id: string }; reel?: { id: string } }) => [
+        e.kind,
+        (e.post ?? e.reel)!.id,
+      ]),
+    ).toEqual([
+      ['reel', id],
+      ['post', post.id],
+    ]);
+    const first = await api(bob).get('/users/me/saved?limit=1');
+    expect(first.body.items).toHaveLength(1);
+    const second = await api(bob).get(`/users/me/saved?limit=1&cursor=${first.body.next_cursor}`);
+    expect(second.body.items[0].kind).toBe('post');
+    expect(second.body.next_cursor).toBeNull();
+    expect((await api(bob).post(`/reels/${id}/save`)).body.saved).toBe(false);
+    expect((await api(bob).get('/users/me/saved')).body.items.map((e: { kind: string }) => e.kind)).toEqual([
+      'post',
+    ]);
+  });
 });
 
 describe('@mention suggestions', () => {
@@ -505,5 +542,112 @@ describe('@mention suggestions', () => {
     expect([...(post.mentions as string[])].sort()).toEqual(['bob.smith', 'cara']);
     const none = await newPost(alice, { caption: 'great…@bob.smith' });
     expect(none.mentions).toEqual([]);
+  });
+});
+
+describe('sharing posts and reels', () => {
+  const ids = (res: { body: { data: { id: string }[] } }) => res.body.data.map((u) => u.id);
+
+  it('offers people you chat with, follow or who follow you, never blocked ones', async () => {
+    const dan = await signUp('dan');
+    await signUp('stranger');
+    await api(alice).post(`/users/${bob.id}/follow`);
+    await api(cara).post(`/users/${alice.id}/follow`);
+    const { body } = await api(alice).post('/conversations', { participant_ids: [dan.id] });
+    await api(alice).post(`/conversations/${body.id as string}/messages`, {
+      body: 'hi',
+      client_message_id: crypto.randomUUID(),
+    });
+    const targets = await api(alice).get('/shares/targets');
+    expect(targets.status).toBe(200);
+    expect(ids(targets)).toEqual([dan.id, bob.id, cara.id]);
+    expect(ids(await api(alice).get('/shares/targets?q=ca'))).toEqual([cara.id]);
+    await api(alice).post(`/users/${bob.id}/block`);
+    expect(ids(await api(alice).get('/shares/targets'))).not.toContain(bob.id);
+  });
+
+  it("sends a post card and the note to each person's chat", async () => {
+    const post = await newPost(bob);
+    const sent = await api(alice).post('/shares', {
+      kind: 'post',
+      id: post.id,
+      user_ids: [bob.id, cara.id],
+      body: 'Look at this',
+    });
+    expect(sent.status).toBe(201);
+    expect(sent.body.conversation_ids).toHaveLength(2);
+    const messages = await api(cara).get(`/conversations/${sent.body.conversation_ids[1] as string}/messages`);
+    expect(messages.body.data[0]).toMatchObject({ type: 'text', body: 'Look at this' });
+    expect(messages.body.data[1]).toMatchObject({
+      type: 'share_post',
+      shared: { kind: 'post', id: post.id, available: true, author: { username: 'bob.smith' } },
+    });
+    await api(bob).del(`/posts/${post.id}`);
+    const after = await api(cara).get(`/conversations/${sent.body.conversation_ids[1] as string}/messages`);
+    expect(after.body.data[1].shared).toMatchObject({ kind: 'post', available: false });
+  });
+
+  it('adds a reel to your story and keeps its video when the story is deleted', async () => {
+    const reel = await api(bob).post('/reels', { video_media_id: await reelMedia(bob) });
+    const story = await api(alice).post('/stories/share', { kind: 'reel', id: reel.body.id });
+    expect(story.status).toBe(201);
+    expect(story.body).toMatchObject({ kind: 'video', shared: { kind: 'reel', username: 'bob.smith' } });
+    const tray = await api(alice).get('/stories/tray');
+    expect(tray.body.items[0].stories[0].shared.id).toBe(reel.body.id);
+    expect((await api(alice).del(`/stories/${story.body.id as string}`)).status).toBe(204);
+    const stored = await Reel.findById(reel.body.id);
+    expect(await Media.exists({ _id: stored!.video_media_id })).toBeTruthy();
+  });
+
+  it('keeps the placement, post card style and stickers of a shared post', async () => {
+    const post = await newPost(bob, { caption: 'Sunset' });
+    const story = await api(alice).post('/stories/share', {
+      kind: 'post',
+      id: post.id,
+      layout: { x: 0.4, y: 0.6, scale: 1.3, style: 'card' },
+      overlays: [
+        { id: 'text-1', type: 'text', x: 0.5, y: 0.2, scale: 1, rotation: 0, text: 'Look', color: '#FFFFFF' },
+      ],
+    });
+    expect(story.status).toBe(201);
+    expect(story.body.shared).toMatchObject({
+      kind: 'post',
+      caption: 'Sunset',
+      layout: { x: 0.4, y: 0.6, scale: 1.3, style: 'card' },
+    });
+    expect(story.body.overlays).toHaveLength(1);
+  });
+
+  it('uses the photo that was on screen for a post with several photos', async () => {
+    const post = await newPost(bob, { media_ids: [await readyMedia(bob), await readyMedia(bob)] });
+    const stored = await Post.findById(post.id);
+    const second = stored!.media[1]!;
+    const story = await api(alice).post('/stories/share', { kind: 'post', id: post.id, media_index: 1 });
+    expect(story.status).toBe(201);
+    expect((await Story.findById(story.body.id))!.key).toBe(second.key);
+    const sent = await api(alice).post('/shares', { kind: 'post', id: post.id, user_ids: [bob.id], media_index: 1 });
+    expect(sent.status).toBe(201);
+    const thread = await api(bob).get(`/conversations/${sent.body.conversation_ids[0] as string}/messages`);
+    const card = (thread.body.data as { shared: { image_url: string } | null }[]).find((m) => m.shared);
+    expect(card!.shared!.image_url).toContain(second.key);
+  });
+
+  it('sends a profile as a card with the latest posts', async () => {
+    await newPost(bob);
+    const sent = await api(alice).post('/shares', { kind: 'profile', id: bob.id, user_ids: [cara.id], body: 'follow' });
+    expect(sent.status).toBe(201);
+    const thread = await api(cara).get(`/conversations/${sent.body.conversation_ids[0] as string}/messages`);
+    expect(thread.body.data[1]).toMatchObject({
+      type: 'share_profile',
+      shared: {
+        kind: 'profile',
+        id: bob.id,
+        available: true,
+        author: { username: 'bob.smith' },
+        profile: { is_private: false },
+      },
+    });
+    expect(thread.body.data[1].shared.profile.grid).toHaveLength(1);
+    expect(thread.body.data[0]).toMatchObject({ type: 'text', body: 'follow' });
   });
 });

@@ -182,6 +182,17 @@ describe('feed, likes, saves, comments', () => {
 });
 
 describe('stories and reels', () => {
+  it('remembers when the author watches their own story, without listing them as a viewer', async () => {
+    const created = await api(alice).post('/stories', { media_id: await media(alice, 'story') });
+    const id = created.body.id as string;
+    expect((await api(alice).get('/stories/tray')).body.items[0].seen).toBe(false);
+    expect((await api(alice).post(`/stories/${id}/view`)).status).toBe(204);
+    const tray = (await api(alice).get('/stories/tray')).body.items[0];
+    expect(tray.seen).toBe(true);
+    expect(tray.stories[0].seen).toBe(true);
+    expect((await api(alice).get(`/stories/${id}/viewers`)).body.items).toEqual([]);
+  });
+
   it('publishes a story for followers and marks it seen', async () => {
     const created = await api(alice).post('/stories', { media_id: await media(alice, 'story') });
     expect(created.status).toBe(201);

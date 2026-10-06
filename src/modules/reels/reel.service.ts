@@ -12,14 +12,21 @@ import { Media } from '../media/media.model';
 import { viewUrl } from '../media/media.storage';
 import { User, type UserDoc } from '../users/user.model';
 import { extractMentions, MAX_MENTIONS } from '../posts/caption';
-import { Comment } from '../posts/post.engage.model';
-import { commentDto } from '../posts/post.extra';
-import { Reel, ReelLike, type ReelDoc } from './reel.model';
+import { Comment, PostSave } from '../posts/post.engage.model';
+import { commentDto, presentPosts } from '../posts/post.extra';
+import { Post } from '../posts/post.model';
+import { Reel, ReelLike, ReelSave, type ReelDoc } from './reel.model';
 
 const MONGO_DUPLICATE_KEY = 11000;
 const pageOf = (limit: number) => Math.min(50, Math.max(1, limit || 20));
 
-async function toReelDto(viewer: UserDoc, reel: ReelDoc, author: UserDoc, liked: boolean) {
+async function toReelDto(
+  viewer: UserDoc,
+  reel: ReelDoc,
+  author: UserDoc,
+  liked: boolean,
+  saved = false,
+) {
   const [summary] = await toUserSummaries(viewer, [author]);
   return {
     id: reel.id as string,
@@ -44,6 +51,7 @@ async function toReelDto(viewer: UserDoc, reel: ReelDoc, author: UserDoc, liked:
     hide_like_count: reel.hide_like_count ?? false,
     comments_disabled: reel.comments_disabled ?? false,
     liked_by_me: liked,
+    saved_by_me: saved,
     is_owner: author._id.equals(viewer._id),
     created_at: (reel.get('created_at') as Date).toISOString(),
   };
@@ -52,18 +60,23 @@ async function toReelDto(viewer: UserDoc, reel: ReelDoc, author: UserDoc, liked:
 async function present(viewer: UserDoc, reels: ReelDoc[]) {
   const authors = await User.find({ _id: { $in: reels.map((r) => r.author_id) } });
   const byId = new Map(authors.map((u) => [u.id as string, u]));
-  const likes = await ReelLike.find({
-    user_id: viewer._id,
-    reel_id: { $in: reels.map((r) => r._id) },
-  })
-    .select('reel_id')
-    .lean();
+  const [likes, saves] = await Promise.all([
+    ReelLike.find({ user_id: viewer._id, reel_id: { $in: reels.map((r) => r._id) } })
+      .select('reel_id')
+      .lean(),
+    ReelSave.find({ user_id: viewer._id, reel_id: { $in: reels.map((r) => r._id) } })
+      .select('reel_id')
+      .lean(),
+  ]);
   const liked = new Set(likes.map((l) => l.reel_id.toHexString()));
+  const saved = new Set(saves.map((s) => s.reel_id.toHexString()));
   return Promise.all(
     reels.flatMap((reel) => {
       const author = byId.get(reel.author_id.toHexString());
       if (!author || author.status !== 'active') return [];
-      return [toReelDto(viewer, reel, author, liked.has(reel.id as string))];
+      return [
+        toReelDto(viewer, reel, author, liked.has(reel.id as string), saved.has(reel.id as string)),
+      ];
     }),
   );
 }
@@ -180,7 +193,10 @@ export async function reelFeed(viewer: UserDoc, cursor: string | undefined, limi
     .select('following_id')
     .lean();
   const pool = await Reel.find({
-    author_id: { $in: await audienceIds(viewer._id, follows.map((f) => f.following_id)) },
+    author_id: {
+      $in: await audienceIds(viewer._id, follows.map((f) => f.following_id)),
+      $ne: viewer._id,
+    },
     deleted_at: null,
   })
     .sort({ _id: -1 })
@@ -243,8 +259,11 @@ async function visibleReel(viewer: UserDoc, reelId: string) {
 
 export async function getReel(viewer: UserDoc, reelId: string) {
   const { reel, author } = await visibleReel(viewer, reelId);
-  const liked = await ReelLike.exists({ user_id: viewer._id, reel_id: reel._id });
-  return toReelDto(viewer, reel, author, !!liked);
+  const [liked, saved] = await Promise.all([
+    ReelLike.exists({ user_id: viewer._id, reel_id: reel._id }),
+    ReelSave.exists({ user_id: viewer._id, reel_id: reel._id }),
+  ]);
+  return toReelDto(viewer, reel, author, !!liked, !!saved);
 }
 
 /** Sets the like on or off. Repeating the same request changes nothing. */
@@ -269,7 +288,8 @@ export async function setReelLike(viewer: UserDoc, reelId: string, want: boolean
     );
   }
   const fresh = (await Reel.findById(reel._id)) ?? reel;
-  return toReelDto(viewer, fresh, author, want);
+  const saved = await ReelSave.exists({ user_id: viewer._id, reel_id: reel._id });
+  return toReelDto(viewer, fresh, author, want, !!saved);
 }
 
 export async function toggleReelLike(viewer: UserDoc, reelId: string) {
@@ -293,8 +313,22 @@ export async function updateReel(
   if (input.hide_like_count !== undefined) reel.hide_like_count = input.hide_like_count;
   if (input.comments_disabled !== undefined) reel.comments_disabled = input.comments_disabled;
   await reel.save();
+  const [liked, saved] = await Promise.all([
+    ReelLike.exists({ user_id: viewer._id, reel_id: reel._id }),
+    ReelSave.exists({ user_id: viewer._id, reel_id: reel._id }),
+  ]);
+  return toReelDto(viewer, reel, viewer, !!liked, !!saved);
+}
+
+export async function toggleReelSave(viewer: UserDoc, reelId: string) {
+  const { reel, author } = await visibleReel(viewer, reelId);
+  const existing = await ReelSave.findOneAndDelete({ user_id: viewer._id, reel_id: reel._id });
+  if (!existing) await ReelSave.create({ user_id: viewer._id, reel_id: reel._id });
   const liked = await ReelLike.exists({ user_id: viewer._id, reel_id: reel._id });
-  return toReelDto(viewer, reel, viewer, !!liked);
+  return {
+    saved: !existing,
+    reel: await toReelDto(viewer, reel, author, !!liked, !existing),
+  };
 }
 
 export async function deleteReel(viewer: UserDoc, reelId: string) {
@@ -302,6 +336,44 @@ export async function deleteReel(viewer: UserDoc, reelId: string) {
   if (!reel) throw ApiError.notFound('This reel is no longer available.');
   reel.deleted_at = new Date();
   await reel.save();
+}
+
+/** Saved posts and saved reels in one list, newest save first. */
+export async function savedAll(viewer: UserDoc, cursor: string | undefined, limit: number) {
+  const take = pageOf(limit);
+  const filter: Record<string, unknown> = { user_id: viewer._id };
+  if (cursor) filter._id = { $lt: cursor };
+  const [postSaves, reelSaves] = await Promise.all([
+    PostSave.find(filter).sort({ _id: -1 }).limit(take + 1).lean(),
+    ReelSave.find(filter).sort({ _id: -1 }).limit(take + 1).lean(),
+  ]);
+  const merged = [
+    ...postSaves.map((s) => ({ save: s._id.toHexString(), kind: 'post' as const, id: s.post_id })),
+    ...reelSaves.map((s) => ({ save: s._id.toHexString(), kind: 'reel' as const, id: s.reel_id })),
+  ].sort((a, b) => (a.save < b.save ? 1 : -1));
+  const page = merged.slice(0, take);
+  const [posts, reels] = await Promise.all([
+    Post.find({ _id: { $in: page.filter((s) => s.kind === 'post').map((s) => s.id) }, deleted_at: null }),
+    Reel.find({ _id: { $in: page.filter((s) => s.kind === 'reel').map((s) => s.id) }, deleted_at: null }),
+  ]);
+  const [postDtos, reelDtos] = await Promise.all([presentPosts(viewer, posts), present(viewer, reels)]);
+  const postsById = new Map(postDtos.map((p) => [p.id, p]));
+  const reelsById = new Map(reelDtos.map((r) => [r.id, r]));
+  type SavedItem =
+    | { kind: 'post'; post: (typeof postDtos)[number] }
+    | { kind: 'reel'; reel: (typeof reelDtos)[number] };
+  const items = page.flatMap((s): SavedItem[] => {
+    if (s.kind === 'post') {
+      const post = postsById.get(s.id.toHexString());
+      return post ? [{ kind: 'post', post }] : [];
+    }
+    const reel = reelsById.get(s.id.toHexString());
+    return reel ? [{ kind: 'reel', reel }] : [];
+  });
+  return {
+    items,
+    next_cursor: merged.length > take ? page[page.length - 1]!.save : null,
+  };
 }
 
 export async function addReelComment(viewer: UserDoc, reelId: string, body: string) {

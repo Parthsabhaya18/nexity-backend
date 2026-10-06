@@ -11,6 +11,10 @@ export const MESSAGE_TYPES = [
   'sticker',
   'voice',
   'system',
+  /** A post, reel or profile sent from its share sheet; the bubble shows it as a card. */
+  'share_post',
+  'share_reel',
+  'share_profile',
 ] as const;
 
 /** Per-participant state. Read receipts and unread counts live here, not on every message. */

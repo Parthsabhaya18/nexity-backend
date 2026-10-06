@@ -60,6 +60,9 @@ const likeOn: RequestHandler = async (req, res) => {
 const likeOff: RequestHandler = async (req, res) => {
   res.json(await reels.setReelLike(req.user!, idParams.parse(req.params).reelId, false));
 };
+const save: RequestHandler = async (req, res) => {
+  res.json(await reels.toggleReelSave(req.user!, idParams.parse(req.params).reelId));
+};
 const remove: RequestHandler = async (req, res) => {
   await reels.deleteReel(req.user!, idParams.parse(req.params).reelId);
   res.status(204).end();
@@ -79,6 +82,10 @@ export const userReels: RequestHandler = async (req, res) => {
   res.json(await reels.reelsByUser(req.user!, userId, cursor, limit));
 };
 
+export const savedAll: RequestHandler = async (req, res) => {
+  const { cursor, limit } = cursorQuerySchema.parse(req.query);
+  res.json(await reels.savedAll(req.user!, cursor, limit));
+};
 export const reelsRouter = Router();
 reelsRouter.use(requireAuth);
 reelsRouter.get('/', list);
@@ -86,6 +93,7 @@ reelsRouter.post('/', postCreateLimiter, create);
 reelsRouter.post('/:reelId/like', like);
 reelsRouter.put('/:reelId/like', likeOn);
 reelsRouter.delete('/:reelId/like', likeOff);
+reelsRouter.post('/:reelId/save', save);
 reelsRouter.get('/:reelId/comments', comments);
 reelsRouter.post('/:reelId/comments', addComment);
 reelsRouter.get('/:reelId', getOne);
