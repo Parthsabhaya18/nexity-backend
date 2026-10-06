@@ -5,6 +5,7 @@ import { ApiError } from '../../utils/ApiError';
 import { Media } from '../media/media.model';
 import type { MediaKind } from '../media/media.rules';
 import { viewUrl } from '../media/media.storage';
+import { Story } from '../stories/story.model';
 import {
   PUBLIC_USER_FIELDS,
   type PublicUserSource,
@@ -127,9 +128,17 @@ export function groupReactions(list: readonly ReactionSource[] | null | undefine
   return [...groups].map(([emoji, user_ids]) => ({ emoji, user_ids, count: user_ids.length }));
 }
 
-export function toMessageDto(m: MessageAttrs, replies: Map<string, ReplySource> = new Map()) {
+/** The story a message replied to, or `url: null` once it expired or was deleted. */
+export type StoryRef = { id: string; author_id: string | null; kind: string | null; url: string | null };
+
+export function toMessageDto(
+  m: MessageAttrs,
+  replies: Map<string, ReplySource> = new Map(),
+  stories: Map<string, StoryRef> = new Map(),
+) {
   const deleted = Boolean(m.deleted_at);
   const reply = m.reply_to_id ? replies.get(m.reply_to_id.toString()) : undefined;
+  const storyId = m.story_id ? m.story_id.toString() : null;
   return {
     id: m._id.toString(),
     conversation_id: m.conversation_id.toString(),
@@ -152,6 +161,10 @@ export function toMessageDto(m: MessageAttrs, replies: Map<string, ReplySource> 
           media: quotedMedia(reply, m.reply_to_index),
         }
       : null,
+    story:
+      storyId && !deleted
+        ? (stories.get(storyId) ?? { id: storyId, author_id: null, kind: null, url: null })
+        : null,
     client_message_id: m.client_message_id,
     reactions: deleted ? [] : groupReactions(m.reactions as ReactionSource[]),
     edited_at: m.edited_at && !deleted ? m.edited_at.toISOString() : null,
@@ -173,7 +186,25 @@ async function toMessageDtos(rows: MessageAttrs[]) {
   const signedReplies = await Promise.all(replies.map(withFreshMediaUrl));
   const byId = new Map(signedReplies.map((r) => [r._id.toString(), r]));
   const signed = await Promise.all(rows.map(withFreshMediaUrl));
-  return signed.map((m) => toMessageDto(m, byId));
+  const stories = await storyRefs(rows);
+  return signed.map((m) => toMessageDto(m, byId, stories));
+}
+
+async function storyRefs(rows: MessageAttrs[]) {
+  const ids = [...new Set(rows.flatMap((m) => (m.story_id ? [m.story_id.toString()] : [])))];
+  if (!ids.length) return new Map<string, StoryRef>();
+  const live = await Story.find({ _id: { $in: ids }, expires_at: { $gt: new Date() } })
+    .select('_id author_id kind key')
+    .lean();
+  const refs = await Promise.all(
+    live.map(async (s): Promise<StoryRef> => ({
+      id: s._id.toString(),
+      author_id: s.author_id.toString(),
+      kind: s.kind,
+      url: await viewUrl(s.key),
+    })),
+  );
+  return new Map(refs.map((r) => [r.id, r]));
 }
 
 async function freshUrl<T extends MediaSource>(m: T): Promise<T> {
@@ -438,7 +469,12 @@ export async function listMessages(
   };
 }
 
-export async function sendMessage(userId: string, conversationId: string, input: SendMessageInput) {
+export async function sendMessage(
+  userId: string,
+  conversationId: string,
+  input: SendMessageInput,
+  { storyId = null }: { storyId?: Types.ObjectId | null } = {},
+) {
   const convo = await requireMembership(conversationId, userId);
   const me = oid(userId);
   const duplicateOf = async () => {
@@ -509,6 +545,7 @@ export async function sendMessage(userId: string, conversationId: string, input:
             }
           : null,
       reply_to_id: input.reply_to_id ?? null,
+      story_id: storyId,
       client_message_id: input.client_message_id,
     });
     message = doc.toObject() as MessageAttrs;

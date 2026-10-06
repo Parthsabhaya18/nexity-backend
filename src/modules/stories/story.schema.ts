@@ -3,6 +3,10 @@ import { z } from 'zod';
 const n01 = z.number().min(0).max(1);
 const text = z.string().trim().min(1).max(80);
 
+export const STORY_FONTS = ['classic', 'modern', 'strong', 'typewriter', 'serif', 'script'] as const;
+export const STORY_BRUSHES = ['pen', 'arrow', 'marker', 'neon'] as const;
+export const STORY_ALIGNS = ['left', 'center', 'right'] as const;
+
 const base = {
   id: z.string().trim().min(4).max(40),
   x: n01,
@@ -15,9 +19,11 @@ export const storyOverlaySchema = z.discriminatedUnion('type', [
   z.object({
     ...base,
     type: z.literal('text'),
-    text,
+    text: z.string().trim().min(1).max(200),
     color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
     background: z.string().regex(/^#[0-9A-Fa-f]{6}$/).nullable().default(null),
+    font: z.enum(STORY_FONTS).default('classic'),
+    align: z.enum(STORY_ALIGNS).default('center'),
   }),
   z.object({
     ...base,
@@ -29,6 +35,9 @@ export const storyOverlaySchema = z.discriminatedUnion('type', [
     type: z.literal('draw'),
     color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
     points: z.array(n01).min(4).max(160),
+    /** Stroke width as a percentage of the story width. */
+    width: z.number().min(0.3).max(8).default(1.2),
+    brush: z.enum(STORY_BRUSHES).default('pen'),
   }),
   z.object({
     ...base,
@@ -70,8 +79,13 @@ export const storyOverlaySchema = z.discriminatedUnion('type', [
     type: z.literal('mention'),
     username: z.string().trim().min(3).max(30),
   }),
+  z.object({
+    ...base,
+    type: z.literal('location'),
+    name: text,
+  }),
 ]);
 
-export const storyOverlaysSchema = z.array(storyOverlaySchema).max(12).default([]);
+export const storyOverlaysSchema = z.array(storyOverlaySchema).max(30).default([]);
 
 export type StoryOverlay = z.infer<typeof storyOverlaySchema>;

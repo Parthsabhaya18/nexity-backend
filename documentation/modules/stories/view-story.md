@@ -28,8 +28,8 @@ Image default display **5 seconds**; video plays its own duration (max 2 minutes
 
 - Opened from the Home tray as a full-screen modal (your own story first). Animated progress bars: photos 5 s, videos follow their playback. A spinner shows and progress waits while media loads; a load error offers retry or skip.
 - Tap left third → previous, right → next; **hold** → pause; **swipe down** or Android back → close; **swipe sideways** → previous / next person.
-- **Viewer footer:** heart (`PUT` / `DELETE /stories/:id/like`, optimistic) and a **Send message** field. A message goes privately to the author (`POST /stories/:id/message`, stored with the story). Question stickers send `POST /stories/:id/reply`; polls `POST /stories/:id/vote`.
-- **Owner footer:** **Viewers** (bottom sheet, `GET /stories/:id/viewers`, shows who liked) and **Delete** (with confirmation, `DELETE /stories/:id`).
+- **Viewer footer:** heart (`PUT` / `DELETE /stories/:id/like`, optimistic) and a **Send message** field. A message goes privately to the author (`POST /stories/:id/message`): it opens or reuses your direct chat with them and is sent there as a normal message with `story_id` set, so both people see it in Chats with a "replied to your story" label and the story thumbnail ("Story unavailable" once it expires). No popup appears after sending. Question stickers send `POST /stories/:id/reply`; polls `POST /stories/:id/vote`.
+- **Owner footer:** **Viewers** (bottom sheet, `GET /stories/:id/viewers`; each row has `liked`, people who liked the story are listed first with a heart, then everyone else newest first) and **Delete** (with confirmation, `DELETE /stories/:id`).
 - Status bar hidden; overlays (text, stickers, mentions, polls, questions) drawn over the media.
 
 ## API
@@ -55,5 +55,5 @@ Owner only; remove segment; destroy Cloudinary asset async; **204**.
 
 - [ ] No edit action in menu (IG parity).
 - [ ] Tap zones, hold-to-pause, swipe-down close, and swipe between users match IG on iOS and Android.
-- [ ] Reply sends DM with optional `story_id` reference on message.
+- [x] Reply sends DM with optional `story_id` reference on message.
 - [ ] Expired story opened from an old link shows "This story is no longer available".

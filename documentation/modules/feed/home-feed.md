@@ -25,7 +25,7 @@ Show a scrollable timeline of posts from followed users and recommended content.
 
 ### `GET /api/v1/feed`
 
-**Query:** `cursor`, `limit` (default 20)
+**Query:** `cursor` (opaque, from `next_cursor`), `limit` (default 20)
 
 **Success `200`:**
 
@@ -53,10 +53,9 @@ Show a scrollable timeline of posts from followed users and recommended content.
 
 `width` / `height` let the app reserve the correct aspect ratio before the image loads (no layout jump).
 
-### Ranking (v3 default)
+### Ranking
 
-1. Posts from followed users (reverse chronological).
-2. Insert 1 suggested post every 8 items from explore pool (logged).
+Random order over the newest 500 eligible posts: your own, every **public** account's, and **private** accounts you follow (accepted). Blocked and muted people are skipped. The order comes from a seed; the cursor is `<seed>_<last key>` (not a post id), so paging never repeats a post, and a fresh load or pull-to-refresh gives a new order.
 
 ## Business rules
 
@@ -66,7 +65,7 @@ Show a scrollable timeline of posts from followed users and recommended content.
 
 ## Implementation status
 
-`GET /feed` returns `{ items: Post[], next_cursor }` for the viewer and accepted follows, newest first. Each post includes `liked_by_me`, `saved_by_me`, carousel `media` and `aspect_ratio`. Like and save are `POST /posts/:id/like` and `/save` (toggles). The Home screen shows the stories tray, a posting bar, pull-to-refresh and infinite scroll. Suggested posts and an offline cache are not built.
+`GET /feed` returns `{ items: Post[], next_cursor }` in random order (see Ranking). Each post includes `liked_by_me`, `saved_by_me`, carousel `media` and `aspect_ratio`. Like and save are `POST /posts/:id/like` and `/save` (toggles). The Home screen shows the stories tray, a posting bar, pull-to-refresh and infinite scroll. Suggested posts and an offline cache are not built.
 
 ## Acceptance criteria
 

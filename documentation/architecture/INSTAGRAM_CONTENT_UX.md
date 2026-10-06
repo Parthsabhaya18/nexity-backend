@@ -115,7 +115,7 @@ Max length **2 minutes** for reels, post videos and story videos (product decisi
 ### Create flow (match Instagram Stories)
 
 1. **Camera / upload** — single image or video (max **60s** video).
-2. **Story editor** — text, stickers, draw (Phase 2); minimum: preview + discard/Share.
+2. **Story editor** — text, stickers, draw (Phase 2); minimum: preview + discard/Share. The photo stays clean: only a small icon column at the top right (Text, Location, Draw). Text is typed in place, centered over the photo, with no box around it by default and a color row above the keyboard (scrollable presets, plus a rainbow button that opens a custom picker: hue bar and shade bar). Above the colors is a font row (Classic, Modern, Strong, Typewriter, Serif, Script; `font` on the text overlay), and an "A" toggle at the top left adds a background box. While the box is on, a "Text / Background" switch picks which of the two the color row changes, so text and background can each be any color. Tap a text to edit it again. Text and location can be pinched with two fingers to resize (`scale` 0.4–3) and rotated (`rotation`). Location opens the place search and adds a movable location sticker, placed exactly in the center (overlay type `location`; removing it clears `location_name`). The text editor (like Instagram) has a vertical text-size slider on the left, a row of font names shown in their own font, and an icon toolbar: font, color wheel, alignment (`align`: center / left / right), and the background box. Draw (squiggle icon in the rail) has one top row: Undo, Pen, Arrow, Marker, Neon (`brush`), Eraser (removes whole strokes it touches), and ✓; a vertical thickness slider on the left (`width`, 0.4–6 % of the story width); and paged color swatches with dots at the bottom. After sharing, the Home stories tray reloads right away; stories expire 24 hours after posting. To delete text or location, drag it onto the trash icon that appears at the bottom while dragging; it turns red when the item is over it. Polls, questions, quizzes, countdowns, links, emoji stickers and people tags are not offered in the editor (old stories that have them still render). Max 30 overlays per story.
 3. Upload to Cloudinary folder `secret/stories/…` → `POST /stories`.
 4. **24-hour expiry** — auto-remove from tray when expired.
 
@@ -126,15 +126,18 @@ Max length **2 minutes** for reels, post videos and story videos (product decisi
 - Fullscreen `StoryViewer` modal (deep link `nexity://stories/:userId/:storyId`); swipe left/right moves between users with a cube transition.
 - **Progress segments** across top for each story in bundle.
 - Tap **right** next, **left** previous, **hold** pause.
-- Swipe down to close.
+- **Who sees a story**: only people who follow each other (both follows accepted). Following someone who doesn't follow back hides their stories from your tray, and `view` / `like` / `message` on them return `404`. Demo data for today: `npm run seed:stories` in the backend.
+- Swipe down (a long drag or a quick flick) to close. Swipe up: on your own story it opens the viewers sheet; on someone else's it focuses the reply box.
 - Reply bar sends **DM** to author (Instagram-style story reply).
+- Own story bottom bar: left, a ^ hint with viewer faces (up to 3) and the count (tap or swipe up for the list); right, a round trash icon to delete.
+- **Profile ring**: on `MyProfile` and `UserProfile` the avatar has a ring while that person has a live story (primary color if unseen or your own, border color once seen). Tap opens the story; long press shows the profile photo. The Home tray's "Your story" also gets a ring when you have one. Rings drop on their own when the last story's 24 hours end.
 
 ### Edit (match Instagram)
 
 Instagram **does not** edit published stories. Match that:
 
 - **No edit route** for published stories.
-- Owner ••• menu: **Delete** only; optional “Highlight” (Phase 2).
+- Owner bottom bar: **Delete** only; optional “Highlight” (Phase 2).
 
 ---
 
@@ -149,7 +152,7 @@ Instagram **does not** edit published stories. Match that:
 | Reels tab | `ReelsTab` → `Reels` (dark tab bar) |
 | Profile tab | No tab — avatar in Home header → `MyProfile` (tabs Posts / Reels / Tagged) |
 | Heart / Messenger icons in Home header | `Notifications`, `Inbox` |
-| Story ring | tray → `StoryViewer` |
+| Story ring | tray or profile avatar → `StoryViewer` |
 
 ## Mobile gestures & feedback
 

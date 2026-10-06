@@ -42,6 +42,70 @@ export async function suggestUsers(viewer: UserDoc, limit: number) {
   return toUserSummaries(viewer, users);
 }
 
+/** Candidates looked at before ranking a typed `@name`. */
+const MENTION_POOL = 50;
+
+/**
+ * People for the `@` picker in captions. Just `@`: people you follow (latest
+ * first), topped up with popular accounts. While typing: usernames starting
+ * with the text first, then names starting with it, then any other match;
+ * people you follow lead within each group. Blocked accounts never appear.
+ */
+export async function mentionUsers(viewer: UserDoc, rawQuery: string, limit: number) {
+  const term = rawQuery.trim().replace(/^@/, '').toLowerCase();
+  const [hidden, followingRows] = await Promise.all([
+    blockIdsFor(viewer._id),
+    Follow.find({ follower_id: viewer._id, status: 'accepted' })
+      .sort({ _id: -1 })
+      .select('following_id')
+      .lean(),
+  ]);
+  const followingIds = followingRows.map((row) => row.following_id);
+  const visible = { is_verified: true, status: 'active' } as const;
+
+  if (!term) {
+    const followed = await User.find({
+      _id: { $in: followingIds, $nin: hidden },
+      ...visible,
+    });
+    const byId = new Map(followed.map((u) => [u.id as string, u]));
+    const picked = followingIds
+      .flatMap((id) => byId.get(id.toHexString()) ?? [])
+      .slice(0, limit);
+    if (picked.length < limit) {
+      const more = await User.find({
+        _id: { $nin: [viewer._id, ...hidden, ...picked.map((u) => u._id)] },
+        ...visible,
+      })
+        .sort({ followers_count: -1, username: 1 })
+        .limit(limit - picked.length);
+      picked.push(...more);
+    }
+    return toUserSummaries(viewer, picked);
+  }
+
+  const users = await User.find({
+    _id: { $ne: viewer._id, $nin: hidden },
+    ...visible,
+    ...userSearchFilter(term),
+  })
+    .sort({ followers_count: -1, _id: 1 })
+    .limit(MENTION_POOL);
+  const followed = new Set(followingIds.map((id) => id.toHexString()));
+  const rank = (u: UserDoc) => {
+    if (u.username.startsWith(term)) return 0;
+    const name = u.display_name.toLowerCase();
+    if (name.startsWith(term) || name.includes(` ${term}`)) return 1;
+    return 2;
+  };
+  const ranked = users
+    .map((u, i) => ({ u, i, r: rank(u), f: followed.has(u.id as string) ? 0 : 1 }))
+    .sort((a, b) => a.r - b.r || a.f - b.f || a.u.username.length - b.u.username.length || a.i - b.i)
+    .slice(0, limit)
+    .map((x) => x.u);
+  return toUserSummaries(viewer, ranked);
+}
+
 /** Big places offered even when the map search is down. */
 const PLACE_CATALOG = [
   'Ahmedabad',

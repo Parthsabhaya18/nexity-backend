@@ -28,8 +28,9 @@ Video URLs: Cloudinary adaptive streaming (`sp_hd` → HLS), played with `react-
 ## Implementation status
 
 - `Reels` tab: vertical full-screen paging (`FlatList`, one reel per page sized to the tab's own height, snapping, `getItemLayout`, at most 3 pages mounted). Only the visible reel plays; it pauses when the tab loses focus or a sheet is open, and restarts playing when you come back to it.
-- **Single tap** → pause / play with a play icon in the middle (this app uses tap-to-pause rather than tap-to-mute). **Double tap** → like with a heart burst. The cover photo shows until the first frame; a spinner shows while buffering; a playback error offers **Try again**.
-- **Right column:** Like (with count, hidden when `hide_like_count` is on), Comment (hidden when comments are off), Share (native share sheet with `https://nexity.com/reels/:id`), sound on / off (not shown if the author muted the audio), Play / Pause, and •••.
+- **Order:** random, like the home feed. The newest 500 reels you can see are shuffled with a seed carried in `next_cursor` (`<seed>_<key>`), so paging never repeats a reel and every fresh load or pull to refresh gives a new order.
+- **Single tap** → pause / play (this app uses tap-to-pause rather than tap-to-mute). The tap shows two round buttons in the middle of the video: **sound on / off** on top (not shown if the author muted the audio) and **Play / Pause** below it. Both can be tapped. While paused they stay visible; while playing they fade after 1.5 s. **Double tap** → like with a heart burst. The cover photo shows until the first frame; a spinner shows while buffering; a playback error offers **Try again**.
+- **Right column:** Like (with count, hidden when `hide_like_count` is on), Comment (hidden when comments are off), Share (native share sheet with `https://nexity.com/reels/:id`), and •••.
 - **•••** owner: bottom sheet with **Hide / Show like count**, **Turn comments off / on**, **Edit description**, **Delete** (with confirmation), using `PATCH` / `DELETE /reels/:id`. Others: Report / Block.
 - **Bottom:** author avatar and username (tap → profile), caption (tap to expand), location.
 - Likes use `PUT` / `DELETE /reels/:id/like`; quick taps are merged so the final state always matches the last tap. Comments use the shared comments sheet with a send icon and loader ([reel-comments.md](reel-comments.md)).
@@ -40,7 +41,7 @@ Video URLs: Cloudinary adaptive streaming (`sp_hd` → HLS), played with `react-
 
 ### `GET /api/v1/reels/feed`
 
-**Query:** `cursor`, `seed`
+**Query:** `cursor` (opaque `<seed>_<key>` from the previous page; omit for a new random order), `limit`
 
 Returns reels with `video_delivery_url`, `thumbnail_url`, `width`, `height`, counts, `liked_by_me`, `saved_by_me`.
 

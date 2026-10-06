@@ -319,6 +319,7 @@ describe('stories', () => {
 
   it('likes a story once and tells the owner', async () => {
     await api(bob).post(`/users/${alice.id}/follow`);
+    await api(alice).post(`/users/${bob.id}/follow`);
     const story = await newStory(alice);
     expect((await api(bob).put(`/stories/${story.id}/like`)).body).toEqual({ liked: true });
     await api(bob).put(`/stories/${story.id}/like`);
@@ -335,6 +336,7 @@ describe('stories', () => {
 
   it('sends a private reply and refuses replying to yourself', async () => {
     await api(bob).post(`/users/${alice.id}/follow`);
+    await api(alice).post(`/users/${bob.id}/follow`);
     const story = await newStory(alice);
     const sent = await api(bob).post(`/stories/${story.id}/message`, { body: 'love this' });
     expect(sent.status).toBe(201);

@@ -7,7 +7,7 @@ import { requireAuth } from '../../middlewares/requireAuth';
 import { objectIdSchema } from '../follows/follow.schema';
 import { CAPTION_MAX } from '../posts/caption';
 import { LOCATION_MAX } from '../posts/post.model';
-import { commentBodySchema, cursorQuerySchema } from '../posts/post.schema';
+import { commentBodySchema, cursorQuerySchema, feedQuerySchema } from '../posts/post.schema';
 import { VIDEO_MAX_MS } from '../media/media.rules';
 import * as reels from './reel.service';
 
@@ -40,7 +40,7 @@ const create: RequestHandler = async (req, res) => {
   res.status(created ? 201 : 200).json(reel);
 };
 const list: RequestHandler = async (req, res) => {
-  const { cursor, limit } = cursorQuerySchema.parse(req.query);
+  const { cursor, limit } = feedQuerySchema.parse(req.query);
   res.json(await reels.reelFeed(req.user!, cursor, limit));
 };
 const getOne: RequestHandler = async (req, res) => {

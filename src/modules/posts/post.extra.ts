@@ -1,14 +1,18 @@
+import { createHash, randomBytes } from 'node:crypto';
+
 import { type Types } from 'mongoose';
 
 import { ApiError } from '../../utils/ApiError';
 import { canViewContent, findVisibleUser } from '../follows/follow.service';
 import { Follow } from '../follows/follow.model';
 import { notifyComment } from '../notifications/notification.service';
-import { audienceIds, isBlockedEither } from '../safety/block.service';
+import { blockIdsFor, isBlockedEither } from '../safety/block.service';
+import { mutedIdsFor } from '../safety/mute.service';
 import { avatarUrlOf, User, type UserDoc } from '../users/user.model';
 import { extractMentions, MAX_MENTIONS } from './caption';
 import { Comment, PostLike, PostSave } from './post.engage.model';
 import { Post, type PostDoc } from './post.model';
+import { FEED_CURSOR } from './post.schema';
 import { Reel } from '../reels/reel.model';
 import { toPostDto } from './post.service';
 
@@ -68,24 +72,61 @@ async function visiblePost(viewer: UserDoc, postId: string) {
   return { post, author };
 }
 
-/** Posts from the viewer and the accounts they follow, newest first. */
+/** How many of the newest eligible posts the home feed shuffles. */
+const FEED_POOL = 500;
+
+const shuffleKey = (seed: string, id: string) =>
+  createHash('sha1').update(seed + id).digest('hex').slice(0, 16);
+
+/**
+ * Home feed in random order: posts from any public account, private accounts
+ * the viewer follows, and the viewer. Blocked and muted people are skipped.
+ * Each post gets a stable key from the seed, so paging never repeats a post;
+ * a fresh load (no cursor) picks a new seed and a new order.
+ */
 export async function feed(viewer: UserDoc, cursor: string | undefined, limit: number) {
   const take = pageOf(limit);
-  const follows = await Follow.find({ follower_id: viewer._id, status: 'accepted' })
-    .select('following_id')
+  const match = cursor ? FEED_CURSOR.exec(cursor) : null;
+  const seed = match?.[1] ?? randomBytes(4).toString('hex');
+  const after = match?.[2] ?? '';
+
+  const [follows, blocked, muted] = await Promise.all([
+    Follow.find({ follower_id: viewer._id, status: 'accepted' }).select('following_id').lean(),
+    blockIdsFor(viewer._id),
+    mutedIdsFor(viewer._id),
+  ]);
+  const hidden = [...blocked, ...muted];
+  const publicAuthors = await User.find({
+    is_private: false,
+    status: 'active',
+    _id: { $nin: hidden },
+  })
+    .select('_id')
     .lean();
-  const filter: Record<string, unknown> = {
-    author_id: { $in: await audienceIds(viewer._id, follows.map((f) => f.following_id)) },
-    deleted_at: null,
-  };
-  if (cursor) filter._id = { $lt: cursor };
-  const rows = await Post.find(filter)
+  const hiddenSet = new Set(hidden.map((id) => id.toHexString()));
+  const authorIds = [
+    viewer._id,
+    ...follows.map((f) => f.following_id).filter((id) => !hiddenSet.has(id.toHexString())),
+    ...publicAuthors.map((u) => u._id),
+  ];
+
+  const pool = await Post.find({ author_id: { $in: authorIds }, deleted_at: null })
     .sort({ _id: -1 })
-    .limit(take + 1);
-  const page = rows.slice(0, take);
+    .limit(FEED_POOL)
+    .select('_id')
+    .lean();
+  const ordered = pool
+    .map((p) => ({ id: p._id, key: shuffleKey(seed, p._id.toHexString()) }))
+    .filter((p) => p.key > after)
+    .sort((a, b) => (a.key < b.key ? -1 : 1));
+  const page = ordered.slice(0, take);
+
+  const docs = await Post.find({ _id: { $in: page.map((p) => p.id) } });
+  const byId = new Map(docs.map((d) => [d.id as string, d]));
+  const posts = page.flatMap((p) => byId.get(p.id.toHexString()) ?? []);
   return {
-    items: await presentPosts(viewer, page),
-    next_cursor: rows.length > take ? (page[page.length - 1]!.id as string) : null,
+    items: await presentPosts(viewer, posts),
+    next_cursor: ordered.length > take ? `${seed}_${page[page.length - 1]!.key}` : null,
   };
 }
 

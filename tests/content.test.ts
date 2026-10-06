@@ -113,19 +113,26 @@ beforeEach(async () => {
 });
 
 describe('feed, likes, saves, comments', () => {
-  it('shows followed posts, toggles like and save, and threads a reply', async () => {
+  it('mixes public posts into the feed, toggles like and save, and threads a reply', async () => {
+    const ids = (res: { body: { items: { id: string }[] } }) => res.body.items.map((p) => p.id).sort();
     const mine = await api(alice).post('/posts', { media_ids: [await media(alice, 'post')] });
     const theirs = await api(bob).post('/posts', {
       media_ids: [await media(bob, 'post')],
       caption: 'Hello #goa',
     });
-    expect((await api(alice).get('/feed')).body.items.map((p: { id: string }) => p.id)).toEqual([
-      mine.body.id,
-    ]);
+    // Public accounts show up without following; private ones don't.
+    expect(ids(await api(alice).get('/feed'))).toEqual([mine.body.id, theirs.body.id].sort());
+    await api(bob).patch('/users/me', { is_private: true });
+    expect(ids(await api(alice).get('/feed'))).toEqual([mine.body.id]);
+    await api(bob).patch('/users/me', { is_private: false });
+
+    // Paging one at a time reaches every post exactly once.
+    const first = await api(alice).get('/feed?limit=1');
+    const second = await api(alice).get(`/feed?limit=1&cursor=${first.body.next_cursor as string}`);
+    expect(second.body.next_cursor).toBeNull();
+    expect([...ids(first), ...ids(second)].sort()).toEqual([mine.body.id, theirs.body.id].sort());
 
     await api(alice).post(`/users/${bob.id}/follow`);
-    const feed = await api(alice).get('/feed');
-    expect(feed.body.items.map((p: { id: string }) => p.id)).toEqual([theirs.body.id, mine.body.id]);
 
     const liked = await api(alice).post(`/posts/${theirs.body.id as string}/like`);
     expect(liked.body).toMatchObject({ liked: true, likes_count: 1 });
@@ -181,6 +188,10 @@ describe('stories and reels', () => {
     expect(created.body.liked_by_me).toBeUndefined();
     expect((await api(bob).get('/stories/tray')).body.items).toEqual([]);
     await api(bob).post(`/users/${alice.id}/follow`);
+    // Like Instagram here: only people who follow each other see each other's stories.
+    expect((await api(bob).get('/stories/tray')).body.items).toEqual([]);
+    expect((await api(bob).post(`/stories/${created.body.id as string}/view`)).status).toBe(404);
+    await api(alice).post(`/users/${bob.id}/follow`);
     const tray = await api(bob).get('/stories/tray');
     expect(tray.body.items[0].seen).toBe(false);
     const storyId = tray.body.items[0].stories[0].id as string;
@@ -197,6 +208,7 @@ describe('stories and reels', () => {
     const created = await api(alice).post('/stories', { media_id: mediaId });
     const storyId = created.body.id as string;
     await api(bob).post(`/users/${alice.id}/follow`);
+    await api(alice).post(`/users/${bob.id}/follow`);
     await api(bob).post(`/stories/${storyId}/view`);
     expect((await request(app).put(`/api/v1/stories/${storyId}/like`).set('Authorization', bob.auth)).status).toBe(200);
     expect((await api(bob).post(`/stories/${storyId}/message`, { body: 'Nice' })).status).toBe(201);
@@ -275,6 +287,7 @@ describe('stories and reels', () => {
     expect(created.body.overlays).toHaveLength(3);
 
     await api(bob).post(`/users/${alice.id}/follow`);
+    await api(alice).post(`/users/${bob.id}/follow`);
     const vote = await api(bob).post(`/stories/${created.body.id as string}/vote`, {
       overlay_id: 'poll-1',
       option: 0,
