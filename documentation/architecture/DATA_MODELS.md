@@ -262,6 +262,8 @@ Module `backend/src/modules/subscriptions/` — [plans-and-billing.md](../module
 
 **`billing_events`** — raw store notifications and verification results: `store`, `store_event_id` (unique), `type`, `subtype`, `user_id` (nullable), `subscription_id`, `payload` (verified, decoded), `status` (`processed` \| `ignored` \| `orphan` \| `failed`), `amount_inr`, `store_order_id`, `created_at`. Kept 2 years. Also powers billing history.
 
+**Razorpay collections** (`payment_checkouts`, `payments`, `payment_webhook_events`, `coupons`, `coupon_redemptions`) and the Razorpay fields on `subscriptions` (`source: 'razorpay'`, `razorpay_subscription_id`, `razorpay_plan_id`, `price_paise`, `next_charge_at`, `payment_method_display`) are defined in [razorpay-payments.md §7](../modules/premium/razorpay-payments.md#7-data-mongodb). Money is always integer paise; card / UPI / bank details are never stored.
+
 **`secret_usage`** — `user_id`, `month` (`2026-10`, Asia/Kolkata), `count`, `day` + `day_count` (fair use). Unique `{ user_id, month }`.
 
 **User additions:** `entitlement { plan, expires_at, source, updated_at }` (cache, recomputed on every subscription change), `billing_account_token` (UUID v4, unique, sparse), `secret_suspended_until` (moderation), privacy `allow_secret_messages` / `allow_secret_crush` (`everyone` default \| `following` \| `off`).

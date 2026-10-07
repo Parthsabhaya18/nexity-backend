@@ -52,6 +52,7 @@ Every screen's deep link works as `nexity://<path>` and `https://nexity.com/<pat
 | Secret Messages (Feature 1) | `Premium` Messages section, `SecretPeoplePicker`, `SecretCompose`, `SecretThread`, reveal overlay | `secret/messages/:threadId` | [modules/premium/secret-messages.md](modules/premium/secret-messages.md) |
 | Secret Crush (Feature 2) | `Premium` Secret Crush section, `MatchCelebration`, love-theme `ChatThread` | `secret/matches/:matchId` | [modules/premium/secret-crush.md](modules/premium/secret-crush.md) |
 | Plans & billing | `Plans`, `PurchaseSuccess`, `Subscription` | `premium/plans`, `settings/subscription` | [modules/premium/plans-and-billing.md](modules/premium/plans-and-billing.md) |
+| Razorpay payments (UPI, AutoPay, QR, cards, net banking, wallets — Android & web) | `Checkout`, `PaymentProcessing`, `PaymentFailed`, `PaymentPending`, `PayByQr` | — | [modules/premium/razorpay-payments.md](modules/premium/razorpay-payments.md) |
 
 ## Posts
 

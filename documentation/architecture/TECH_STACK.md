@@ -84,6 +84,7 @@ Shared types: keep request/response Zod schemas in the backend; mirror TypeScrip
 | `REDIS_URL` | Cache, chat, rate limits |
 | `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` | Token signing |
 | `APPLE_*`, `GOOGLE_PLAY_*`, `GOOGLE_PUBSUB_*` | Store billing verification + webhooks ([plans-and-billing.md](../modules/premium/plans-and-billing.md#7-environment-variables-backend)) |
+| `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `RAZORPAY_PLAN_IDS` | Razorpay payments + AutoPay ([razorpay-payments.md](../modules/premium/razorpay-payments.md#9-environment-variables-backend)). Secrets server-only |
 | `SECRET_MESSAGE_KEY` | AES-256-GCM key for Secret Message bodies ([SECRET_FEATURES_SECURITY.md](SECRET_FEATURES_SECURITY.md#7-data-protection)) |
 | `AWS_REGION`, `S3_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `MEDIA_PUBLIC_BASE_URL`, `S3_ENDPOINT`, `MEDIA_UPLOAD_URL_TTL_SECONDS` | Media storage ([MEDIA_STORAGE.md](MEDIA_STORAGE.md)) |
 | `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` | Push notifications |

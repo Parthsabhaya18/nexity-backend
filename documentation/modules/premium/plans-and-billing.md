@@ -7,7 +7,8 @@
 **Frontend:** `frontend/src/screens/premium/`, `frontend/src/features/subscription/`, `frontend/src/services/api/subscriptions.ts`  
 **Backend:** `backend/src/modules/subscriptions/`  
 **Security:** [SECRET_FEATURES_SECURITY.md](../../architecture/SECRET_FEATURES_SECURITY.md)  
-**Prototype:** `frontend/prototype/js/subscription.js`, `frontend/prototype/js/state.js` (`NX.defaultPlans`)
+**Prototype:** `frontend/prototype/js/subscription.js`, `frontend/prototype/js/state.js` (`NX.defaultPlans`)  
+**Razorpay (Android & web payments, AutoPay):** [razorpay-payments.md](razorpay-payments.md)
 
 Nexity has **3 plans: Free, Plus, Premium**. Posts, Reels, Stories and Chat are free for everyone. Plans unlock the **Secret** features: [Secret Messages](secret-messages.md) and [Secret Crush](secret-crush.md).
 
@@ -89,14 +90,17 @@ Seeded by `backend/src/modules/subscriptions/plans.seed.ts` on startup when miss
 
 ---
 
-## 2. Payment method — App Store & Google Play billing (required)
+## 2. Payment providers
 
-Nexity sells **digital features inside a native app**, so:
+| Where | Provider | Doc |
+|---|---|---|
+| **Android** | **Razorpay** — UPI apps (Google Pay, PhonePe, Paytm, BHIM), UPI ID, QR, cards, net banking, wallets, **AutoPay** — offered through Google's User Choice Billing next to Google Play Billing | [razorpay-payments.md](razorpay-payments.md) |
+| **Web** (`nexity.com/premium`) | **Razorpay** (all methods) | [razorpay-payments.md](razorpay-payments.md) |
+| **iOS** | Apple In-App Purchase (StoreKit 2) — required by App Store Guideline 3.1.1; Razorpay is never shown on iOS | This section |
 
-- **iOS:** Apple In-App Purchase (StoreKit 2) is mandatory (App Store Review Guideline 3.1.1).
-- **Android:** Google Play Billing is mandatory for Play-distributed apps (Payments policy).
+All providers write to the same `subscriptions` collection, so **one plan works on every device** of the account: a plan bought with Razorpay on Android also unlocks the iPhone app, and the other way round. Only one paid subscription can be active per account (`409 ALREADY_ON_PLAN` from the other provider's checkout).
 
-The prototype's UPI / Card / Net Banking / Wallet checkout is **demo only and must not ship**. UPI, cards and wallets remain available to users **inside the Apple / Google payment sheet** (both support UPI and cards in India).
+The prototype's own card / UPI input fields are demo only — the real card, UPI and bank screens are Razorpay's (Android / web) or Apple's (iOS). The rest of this section describes the **store** billing used on iOS (and Google Play Billing as the second option on Android).
 
 | Prototype element | Production equivalent |
 |---|---|
@@ -179,7 +183,7 @@ UI (top to bottom):
 7. Footer links: **Restore purchases**, **Redeem a code**, Terms, Privacy. These are required by both stores.
 8. Legal fine print: auto-renew terms ("Renews automatically at ₹99/month until cancelled. Cancel at least 24 hours before renewal in your App Store / Google Play settings.").
 
-**Purchase flow:**
+**Purchase flow:** on **Android and web**, the plan button opens `Checkout { planId }` (Razorpay — [razorpay-payments.md §3](razorpay-payments.md#3-user-flow-frontend)); on Android a "Pay with Google Play" option is shown next to it. On **iOS** the flow below (StoreKit) is used:
 
 ```
 Tap "Get Premium"
