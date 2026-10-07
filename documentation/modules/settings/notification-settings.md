@@ -18,6 +18,8 @@ Let users choose which push notifications they receive on this account (all thei
 - **Posts & reels:** Likes (Off / From people I follow / From everyone), Comments (same three options), Mentions (switch).
 - **Followers:** New followers, Follow requests (switches).
 - **Messages:** Messages (switch), Show message previews (switch).
+- **Secret:** Secret Messages ("Always anonymous"), Secret Crush ("Always anonymous"), Matches (switches) — keys `secret_messages`, `secret_crush`, `matches`.
+- **Subscription & billing** (switch) — key `subscription`. Payment problems and refunds are always sent.
 - Changes save immediately (optimistic) — no Save button.
 - Android only: link **Manage notification categories** → system channel settings (channels in PUSH_NOTIFICATIONS.md).
 
@@ -37,6 +39,10 @@ Let users choose which push notifications they receive on this account (all thei
   "follow_requests": true,
   "messages": true,
   "show_message_previews": true,
+  "secret_messages": true,
+  "secret_crush": true,
+  "matches": true,
+  "subscription": true,
   "updated_at": "2026-10-03T06:30:00Z"
 }
 ```

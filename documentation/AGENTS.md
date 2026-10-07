@@ -23,6 +23,9 @@ Read this file first when implementing features. Nexity is a **native iOS + Andr
 | [architecture/MEDIA_STORAGE.md](architecture/MEDIA_STORAGE.md) | Image/video uploads from the device to AWS S3 and delivery |
 | [architecture/INSTAGRAM_CONTENT_UX.md](architecture/INSTAGRAM_CONTENT_UX.md) | Posts, Reels, Stories UX (match Instagram app) |
 | [architecture/THEMING.md](architecture/THEMING.md) | Mood themes (each replaces Light / Dark / System for the whole app), plus dark & light |
+| [modules/premium/](modules/premium/premium-hub.md) | **Secret Messages, Secret Crush, 3 plans (Free / Plus / Premium), store billing** |
+| [modules/premium/razorpay-payments.md](modules/premium/razorpay-payments.md) | **Razorpay payments**: UPI apps, AutoPay, QR, cards, net banking, wallets, server-side amounts, payment security |
+| [architecture/SECRET_FEATURES_SECURITY.md](architecture/SECRET_FEATURES_SECURITY.md) | Anonymity, encryption, purchase verification and moderation rules for the Secret features |
 | [API_QUICK_REFERENCE.md](API_QUICK_REFERENCE.md) | All endpoints |
 
 ## How to implement a feature

@@ -57,7 +57,8 @@ RootStack (native-stack)
 ├── MainTabs (bottom-tabs)          (logged in)
 │   ├── HomeTab     → HomeStack     root: Home (feed + stories tray)
 │   ├── SearchTab   → SearchStack   root: Explore (search bar on top)
-│   ├── PremiumTab  → Premium (icon always in brand colour)
+│   ├── PremiumTab  → PremiumStack  root: Premium (Secret Messages + Secret Crush; icon always in brand colour)
+│   │                               also: SecretThread, Plans, PurchaseSuccess, Subscription — see modules/premium/
 │   ├── ReelsTab    → ReelsStack    root: Reels (always dark)
 │   └── Create (+)  → round gradient button outside the pill, on its right; opens CreateSheet (not a tab)
 │
@@ -77,6 +78,8 @@ RootStack (native-stack)
     ├── StoryViewer       (fullScreenModal, transparent, swipe-down to close)
     ├── MediaLightbox     (fullScreenModal, always dark)
     ├── EditPost, EditReel, EditProfile, NewMessage, CreateGroup   (modal / pageSheet)
+    ├── SecretCompose     (fullScreenModal), SecretPeoplePicker (modal)
+    ├── MatchCelebration  (fullScreenModal, transparent — fireworks over the love-theme chat)
     └── Bottom sheets (not routes): Comments, ReelComments, Likers, Share, ••• menu, Report
 ```
 

@@ -13,7 +13,10 @@ Native switches (`Switch` with theme `primary` track color); changes save immedi
 - Allow DMs from: everyone / followers / none.
 - Show activity status (online).
 - Remove location data from my photos (`strip_location_metadata`, default on).
+- Allow Secret Messages from: everyone (default) / people I follow / no one (`allow_secret_messages`) — [secret-messages.md](../premium/secret-messages.md).
+- Allow Secret Crush from: everyone (default) / people I follow / no one (`allow_secret_crush`) — [secret-crush.md](../premium/secret-crush.md).
 - Row → **Blocked accounts** (`BlockedAccounts`).
+- Row → **Blocked secret senders** (anonymous blocks; `GET /users/me/secret-blocks`). Rows read "Anonymous sender · blocked 3 Oct" + Unblock — the sender is never shown.
 
 ## API
 
