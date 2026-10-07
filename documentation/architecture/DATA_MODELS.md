@@ -223,6 +223,96 @@ One row per user. Booleans default `true` unless noted.
 | details | text |
 | status | `open` \| `resolved` |
 
+## Plans & subscriptions
+
+Module `backend/src/modules/subscriptions/` — [plans-and-billing.md](../modules/premium/plans-and-billing.md).
+
+**`plans`** — `_id` = `free` | `plus` | `premium`
+
+| Field | Notes |
+|-------|-------|
+| name, description, features[] | Shown on the paywall |
+| rank | 0 free, 1 plus, 2 premium (highest entitled plan wins) |
+| mrp_inr, price_inr | Display only; real prices come from the store |
+| active | Inactive plans are hidden from `GET /plans` (existing subscribers keep them) |
+| limits | `{ secret_messages_per_month (-1 = unlimited), secret_messages_per_day_fair_use, crush_spots, read_secret, nearby, badge }` |
+| products | `{ ios: { monthly, quarterly, yearly }, android: { subscription_id, base_plans } }` |
+
+**`subscriptions`**
+
+| Field | Notes |
+|-------|-------|
+| user_id | ObjectId → User; index `{ user_id, status }` |
+| plan_id | `plus` \| `premium` |
+| source | `app_store` \| `google_play` \| `gift` |
+| period | `monthly` \| `quarterly` \| `yearly` \| `null` (gift) |
+| store_product_id | |
+| original_transaction_id | iOS; unique `{ source, original_transaction_id }` (partial) |
+| purchase_token, linked_purchase_token | Android; unique `{ source, purchase_token }` (partial) |
+| environment | `production` \| `sandbox` |
+| status | `active` \| `canceled` \| `in_grace` \| `on_hold` \| `paused` \| `expired` \| `revoked` |
+| auto_renew | boolean |
+| current_period_start, current_period_end | datetime |
+| grace_ends_at | nullable |
+| acknowledged | Android |
+| gift | `{ admin_id, note }` for `source: gift` |
+| last_event_at | Newest store event applied (out-of-order guard) |
+| transferred_from_user_id, transferred_at | Restore on another account |
+| created_at, updated_at | |
+
+**`billing_events`** — raw store notifications and verification results: `store`, `store_event_id` (unique), `type`, `subtype`, `user_id` (nullable), `subscription_id`, `payload` (verified, decoded), `status` (`processed` \| `ignored` \| `orphan` \| `failed`), `amount_inr`, `store_order_id`, `created_at`. Kept 2 years. Also powers billing history.
+
+**`secret_usage`** — `user_id`, `month` (`2026-10`, Asia/Kolkata), `count`, `day` + `day_count` (fair use). Unique `{ user_id, month }`.
+
+**User additions:** `entitlement { plan, expires_at, source, updated_at }` (cache, recomputed on every subscription change), `billing_account_token` (UUID v4, unique, sparse), `secret_suspended_until` (moderation), privacy `allow_secret_messages` / `allow_secret_crush` (`everyone` default \| `following` \| `off`).
+
+## Secret Messages
+
+Module `backend/src/modules/secret-messages/` — [secret-messages.md](../modules/premium/secret-messages.md). Public ids are random UUID v4 (never ObjectIds — they contain the exact creation time).
+
+**`secret_threads`**
+
+| Field | Notes |
+|-------|-------|
+| public_id | UUID v4, unique — used in APIs and deep links |
+| sender_id, recipient_id | ObjectId → User |
+| status | `sealed` \| `revealed` \| `archived` \| `withdrawn` |
+| replies_used | 0–2 (recipient replies); reply 2 reveals |
+| sender_followups_unanswered | 0–3; reset when the recipient replies |
+| conversation_id | Direct conversation after the reveal |
+| revealed_at, archived_at | |
+| members | `{ sender: { last_read_at, hidden }, recipient: { last_read_at, hidden } }` |
+| last_activity_at, created_at | |
+
+Indexes: partial unique `{ sender_id, recipient_id }` where `status: 'sealed'`; `{ recipient_id, status, last_activity_at: -1 }` (inbox); `{ sender_id, last_activity_at: -1 }` (sent).
+
+**`secret_thread_messages`**: `public_id`, `thread_id`, `author` (`sender` \| `recipient`), `author_id`, `body_enc` `{ ct, iv, tag, key_version }` (AES-256-GCM), `client_message_id` (unique per `author_id`), `created_at`. Index `{ thread_id, _id: -1 }`.
+
+**`secret_blocks`**: `public_id`, `blocker_id`, `blocked_id`, `created_at`. Unique `{ blocker_id, blocked_id }`. `blocked_id` is never returned to the blocker.
+
+## Secret Crush
+
+Module `backend/src/modules/secret-crush/` — [secret-crush.md](../modules/premium/secret-crush.md).
+
+**`crushes`**
+
+| Field | Notes |
+|-------|-------|
+| from_user_id, to_user_id | Unique `{ from_user_id, to_user_id }`; index `{ to_user_id, status }` |
+| status | `active` \| `paused` \| `matched` \| `removed` |
+| match_id | → `crush_matches` |
+| notified_at | Last "Someone added you" sent (30-day window) |
+| removed_at | 24 h re-add cooldown; hard-deleted 30 days later |
+| created_at, updated_at | |
+
+**`crush_matches`**: `public_id` (UUID), `pair_key` (sorted ids joined by `:`, **unique**), `user_ids[2]`, `conversation_id`, `matched_at`, `celebrated_at` `{ <userId>: datetime }`.
+
+**`crush_admirer_counts`**: `user_id` (unique), `count`, `recomputed_at`.
+
+**Conversation additions:** `origin` (`null` \| `secret_message` \| `secret_crush_match`), `theme` (`null` \| `love`). Messages copied in from a revealed thread carry `meta { origin: 'secret_message', sent_at }`.
+
+**Notification additions:** `actor_id` becomes **nullable**; it is always `null` for anonymous types (`secret_message_received`, `secret_message_followup`, `crush_added`). New field `entity_id` (thread / match public id).
+
 ## Hashtag
 
 Removed. Captions are not parsed for hashtags, and there is no tag search and no hashtag feed.

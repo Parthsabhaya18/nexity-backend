@@ -18,6 +18,7 @@ Every screen's deep link works as `nexity://<path>` and `https://nexity.com/<pat
 | [architecture/MEDIA_STORAGE.md](architecture/MEDIA_STORAGE.md) | All image/video storage (AWS S3) & uploads from the device |
 | [architecture/INSTAGRAM_CONTENT_UX.md](architecture/INSTAGRAM_CONTENT_UX.md) | Posts, Reels, Stories — IG parity, tabs, gestures |
 | [architecture/THEMING.md](architecture/THEMING.md) | Mood themes (replace Light / Dark / System for the whole app), plus dark & light appearance |
+| [architecture/SECRET_FEATURES_SECURITY.md](architecture/SECRET_FEATURES_SECURITY.md) | Secret Messages, Secret Crush & payments: anonymity, encryption, purchase verification, moderation, rate limits |
 
 ## Authentication & account
 
@@ -40,6 +41,17 @@ Every screen's deep link works as `nexity://<path>` and `https://nexity.com/<pat
 | Explore | `Explore` (SearchTab) | `explore` | [modules/explore/explore.md](modules/explore/explore.md) |
 | Search | `Explore` search mode | `search?q=` | [modules/search/search.md](modules/search/search.md) |
 | Notifications | `Notifications` (Home header ♡) | `notifications` | [modules/notifications/notifications.md](modules/notifications/notifications.md) |
+
+## Premium — Secret features & plans
+
+3 plans: **Free**, **Plus** (₹99/month), **Premium** (₹249/month). Feature matrix in [plans-and-billing.md](modules/premium/plans-and-billing.md#12-what-each-plan-unlocks).
+
+| Module | Screen | Deep link | Doc |
+|--------|--------|-----------|-----|
+| Premium tab (Secret hub) | `Premium` (PremiumTab) | `premium`, `premium/messages`, `premium/crush` | [modules/premium/premium-hub.md](modules/premium/premium-hub.md) |
+| Secret Messages (Feature 1) | `Premium` Messages section, `SecretPeoplePicker`, `SecretCompose`, `SecretThread`, reveal overlay | `secret/messages/:threadId` | [modules/premium/secret-messages.md](modules/premium/secret-messages.md) |
+| Secret Crush (Feature 2) | `Premium` Secret Crush section, `MatchCelebration`, love-theme `ChatThread` | `secret/matches/:matchId` | [modules/premium/secret-crush.md](modules/premium/secret-crush.md) |
+| Plans & billing | `Plans`, `PurchaseSuccess`, `Subscription` | `premium/plans`, `settings/subscription` | [modules/premium/plans-and-billing.md](modules/premium/plans-and-billing.md) |
 
 ## Posts
 

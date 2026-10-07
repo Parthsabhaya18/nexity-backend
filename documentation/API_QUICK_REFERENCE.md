@@ -171,6 +171,58 @@ Implemented ([chat-thread.md](modules/messages/chat-thread.md)). `GET /users/sea
 | POST | `/notifications/:id/read` |
 | POST | `/reports` |
 
+## Plans & subscriptions
+
+Planned ([plans-and-billing.md](modules/premium/plans-and-billing.md)). Gated routes return `403 PLAN_REQUIRED` / `PLAN_LIMIT_REACHED`.
+
+| Method | Path |
+|--------|------|
+| GET | `/plans` |
+| GET | `/subscriptions/me` (plan, status, limits, usage) |
+| POST | `/subscriptions/billing-token` |
+| POST | `/subscriptions/purchases` (verify StoreKit 2 JWS / Play purchase token) |
+| POST | `/subscriptions/restore` |
+| GET | `/subscriptions/me/transactions` |
+| POST | `/webhooks/apple` (no bearer; App Store Server Notifications V2, JWS-verified) |
+| POST | `/webhooks/google` (no bearer; Pub/Sub push, OIDC-verified) |
+| GET / PATCH | `/admin/plans`, `/admin/plans/:id` |
+| POST / DELETE | `/admin/users/:id/plan-gift` |
+| GET | `/admin/billing-events` |
+
+## Secret Messages
+
+Planned ([secret-messages.md](modules/premium/secret-messages.md)). Thread ids are UUID v4.
+
+| Method | Path |
+|--------|------|
+| POST | `/secret-messages` (start; Plus / Premium) |
+| GET | `/secret-messages/summary` (all plans) |
+| GET | `/secret-messages/inbox` (Plus / Premium; sealed items have no sender or body) |
+| GET | `/secret-messages/sent` |
+| GET | `/secret-messages/:threadId` |
+| GET | `/secret-messages/:threadId/messages` |
+| POST | `/secret-messages/:threadId/messages` (follow-up or reply; recipient's 2nd reply reveals) |
+| POST | `/secret-messages/:threadId/read` |
+| POST | `/secret-messages/:threadId/report` (all plans) |
+| POST | `/secret-messages/:threadId/block-sender` (all plans) |
+| DELETE | `/secret-messages/:threadId` (hide / withdraw) |
+| GET | `/users/me/secret-blocks` |
+| DELETE | `/users/me/secret-blocks/:blockId` |
+
+## Secret Crush
+
+Planned ([secret-crush.md](modules/premium/secret-crush.md)).
+
+| Method | Path |
+|--------|------|
+| GET | `/secret-crushes/summary` (all plans) |
+| GET | `/secret-crushes` |
+| POST | `/secret-crushes` (Plus 3 / Premium 10 spots; returns `matched`) |
+| DELETE | `/secret-crushes/:userId` |
+| GET | `/secret-crushes/matches` |
+| GET | `/secret-crushes/matches/:matchId` |
+| POST | `/secret-crushes/matches/:matchId/celebrated` |
+
 ## Push devices
 
 | Method | Path |

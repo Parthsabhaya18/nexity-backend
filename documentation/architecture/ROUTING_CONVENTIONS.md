@@ -43,8 +43,15 @@ Every deep-link path below works with both prefixes:
 | `settings/notifications` | `NotificationSettings` | — | Yes |
 | `settings/privacy` | `PrivacySettings` | — | Yes |
 | `settings/account` | `AccountSettings` | — | Yes |
+| `settings/subscription` | `Subscription` | — | Yes |
+| `premium` | `Premium` (PremiumTab) | — | Yes |
+| `premium/messages` | `Premium` | `section=messages` | Yes |
+| `premium/crush` | `Premium` | `section=crush` | Yes |
+| `premium/plans` | `Plans` | `reason?` | Yes |
+| `secret/messages/:threadId` | `SecretThread` | `threadId` | Yes |
+| `secret/matches/:matchId` | `MatchCelebration` | `matchId` | Yes |
 
-Screens **without** a deep link (only reached in-app): `VerifyEmail` and `ResetPassword` (email codes, not links), `ForgotPassword`, onboarding screens, `EditPost`, `EditReel`, `EditProfile`, `NewMessage`, `CreateGroup`, `BlockedAccounts`, `AdminModeration`, `DevComponents` (debug builds only), all bottom sheets.
+Screens **without** a deep link (only reached in-app): `VerifyEmail` and `ResetPassword` (email codes, not links), `ForgotPassword`, onboarding screens, `EditPost`, `EditReel`, `EditProfile`, `NewMessage`, `CreateGroup`, `BlockedAccounts`, `AdminModeration`, `DevComponents` (debug builds only), `SecretCompose`, `SecretPeoplePicker`, `PurchaseSuccess`, all bottom sheets.
 
 ### Rules
 
