@@ -46,6 +46,8 @@ const envSchema = z
     SMTP_USER: z.preprocess(emptyToUndefined, z.string().optional()),
     SMTP_PASS: z.preprocess(emptyToUndefined, z.string().optional()),
     MAIL_FROM: z.string().default('Nexity <no-reply@nexity.app>'),
+    // Brevo's HTTPS API, for hosts that block outbound SMTP (Render's free tier). Used instead of SMTP when set.
+    BREVO_API_KEY: z.preprocess(emptyToUndefined, z.string().trim().optional()),
 
     KEEP_ALIVE_ENABLED: z
       .enum(['true', 'false'])
@@ -87,11 +89,11 @@ const envSchema = z
         message: 'JWT_ACCESS_SECRET is required in production',
       });
     }
-    if (cfg.NODE_ENV === 'production' && !cfg.SMTP_HOST) {
+    if (cfg.NODE_ENV === 'production' && !cfg.SMTP_HOST && !cfg.BREVO_API_KEY) {
       ctx.addIssue({
         code: 'custom',
         path: ['SMTP_HOST'],
-        message: 'SMTP_HOST is required in production so OTP emails can be sent',
+        message: 'SMTP_HOST or BREVO_API_KEY is required in production so OTP emails can be sent',
       });
     }
     if (cfg.NODE_ENV === 'production') {
@@ -128,7 +130,11 @@ export const isProduction = env.NODE_ENV === 'production';
 export const jwtAccessSecret =
   env.JWT_ACCESS_SECRET ?? 'nexity-development-only-secret-change-me-0000';
 
-export const isMailConfigured = env.NODE_ENV !== 'test' && Boolean(env.SMTP_HOST);
+export const isMailConfigured =
+  env.NODE_ENV !== 'test' && Boolean(env.SMTP_HOST || env.BREVO_API_KEY);
+
+/** Public origin of this API, for links and images inside emails. */
+export const publicBaseUrl = env.RENDER_EXTERNAL_URL ?? env.APP_URL;
 
 export const isMediaConfigured = Boolean(env.AWS_REGION && env.S3_BUCKET);
 
