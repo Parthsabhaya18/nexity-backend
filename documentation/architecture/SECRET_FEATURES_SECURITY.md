@@ -150,3 +150,24 @@ Exceeded → `429 TOO_MANY_REQUESTS` (`Retry-After` header).
 - [ ] Parallel-race tests: double reveal, double match, quota overuse.
 - [ ] Privacy settings `allow_secret_messages` / `allow_secret_crush` enforced.
 - [ ] App Store privacy labels and Play Data safety updated (purchase history, user content).
+
+## 12. Nearby encounters
+
+Full design: [nearby-encounters.md](../modules/nearby/nearby-encounters.md).
+
+- **Opt-in, off by default.** Nobody can see whether another person's Nearby is on.
+- **Bluetooth ids:** 16 random bytes from the server, 15-minute windows, stored only as sha256. Never a user id, username, phone, token or stable id over the air. MAC addresses and device names are never used to identify anyone.
+- **Mutual verification:** a profile appears on `Nearby` only after **both** phones report each other's current ids within ± 2 minutes. Replayed ids and scan-only devices never verify.
+- **Location:** When-In-Use only; readings rejected above the accuracy limit or older than 2 minutes; rounded to ~11 m and deleted after 15 minutes. Encounters store no coordinates. Logs redact `lat`, `lng`, `eph_id`.
+- **Hints on sealed threads:** keyed by thread id (the client never learns the sender), day granularity only, require both people to have Nearby on, hidden after a secret block. Never shown on the "people who have a crush on you" card.
+- **No side effects:** an encounter never creates a message, crush, match or chat, and never changes admirer counts.
+- **Push:** generic "Someone is near you on Nexity. ✨", no actor; per-pair cooldown, daily cap, idempotency key.
+- **Opt-out / block:** applied on the server at once (tokens revoked, presence and pings deleted, encounters ignored).
+- **Admins** see aggregate counts and "Nearby misuse" reports only, never locations, encounters, or who has Nearby on.
+
+| Endpoint | Limit |
+|---|---|
+| All `/nearby/*` | 120 / 15 min / user |
+| `POST /nearby/ble/tokens` | 30 / 15 min / user |
+| `POST /nearby/ble/sightings` | 1 / 20 s / user, ≤ 50 sightings |
+| `POST /nearby/location` | 1 / 60 s / user |

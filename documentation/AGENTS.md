@@ -26,6 +26,7 @@ Read this file first when implementing features. Nexity is a **native iOS + Andr
 | [modules/premium/](modules/premium/premium-hub.md) | **Secret Messages, Secret Crush, 3 plans (Free / Plus / Premium), store billing** |
 | [modules/premium/razorpay-payments.md](modules/premium/razorpay-payments.md) | **Razorpay payments**: UPI apps, AutoPay, QR, cards, net banking, wallets, server-side amounts, payment security |
 | [architecture/SECRET_FEATURES_SECURITY.md](architecture/SECRET_FEATURES_SECURITY.md) | Anonymity, encryption, purchase verification and moderation rules for the Secret features |
+| [modules/nearby/nearby-encounters.md](modules/nearby/nearby-encounters.md) | **Nearby**: Bluetooth nearby users (rotating ids, mutual verification), location push, today/yesterday hints in Secret features, audit, test plan |
 | [API_QUICK_REFERENCE.md](API_QUICK_REFERENCE.md) | All endpoints |
 
 ## How to implement a feature

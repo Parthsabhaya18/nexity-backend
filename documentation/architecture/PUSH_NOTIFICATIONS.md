@@ -70,6 +70,7 @@ Create channels at startup with Notifee. Users can mute channels in Android syst
 | `social` | Likes & comments | Default | `like_post`, `like_reel`, `comment_post`, `comment_reel`, `mention_post` |
 | `follows` | Followers | Default | `follow`, `follow_request`, `follow_accepted` |
 | `secret` | Secret | High | `secret_message_received`, `secret_message_followup`, `secret_message_reply`, `secret_message_revealed`, `crush_added`, `crush_match`, `secret_message_waiting`, `crush_admirer_waiting` |
+| `nearby` | Nearby | Default | `nearby_encounter` — fixed title "Nexity", body "Someone is near you on Nexity. ✨", no actor, `deep_link: nexity://nearby` ([nearby-encounters.md §5.3](../modules/nearby/nearby-encounters.md#53-location-notification-flow)) |
 | `general` | Other | Low | Account and security notices, `subscription_*` |
 
 Anonymous types (`secret_message_received`, `secret_message_followup`, `crush_added`) use a fixed title/body, no `actor_avatar_url`, iOS `thread-id: "secret"`, and are sent after a random 30–120 s delay — see [SECRET_FEATURES_SECURITY.md](SECRET_FEATURES_SECURITY.md#3-anonymity-guarantees).

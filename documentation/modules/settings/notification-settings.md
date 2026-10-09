@@ -20,6 +20,7 @@ Let users choose which push notifications they receive on this account (all thei
 - **Messages:** Messages (switch), Show message previews (switch).
 - **Secret:** Secret Messages ("Always anonymous"), Secret Crush ("Always anonymous"), Matches (switches) — keys `secret_messages`, `secret_crush`, `matches`.
 - **Subscription & billing** (switch) — key `subscription`. Payment problems and refunds are always sent.
+- **Nearby** (switch, mirrors `nearby.notifications_enabled`; shown only when Nearby is on) — "Someone is near you on Nexity. ✨". See [nearby-encounters.md](../nearby/nearby-encounters.md#112-nearbysettings).
 - Changes save immediately (optimistic) — no Save button.
 - Android only: link **Manage notification categories** → system channel settings (channels in PUSH_NOTIFICATIONS.md).
 

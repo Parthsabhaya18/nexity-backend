@@ -54,6 +54,16 @@ Every screen's deep link works as `nexity://<path>` and `https://nexity.com/<pat
 | Plans & billing | `Plans`, `PurchaseSuccess`, `Subscription` | `premium/plans`, `settings/subscription` | [modules/premium/plans-and-billing.md](modules/premium/plans-and-billing.md) |
 | Razorpay payments (UPI, AutoPay, QR, cards, net banking, wallets — Android & web) | `Checkout`, `PaymentProcessing`, `PaymentFailed`, `PaymentPending`, `PayByQr` | — | [modules/premium/razorpay-payments.md](modules/premium/razorpay-payments.md) |
 
+## Nearby
+
+Opt-in, off by default. Bluetooth finds verified Nexity users around you, location sends a generic "Someone is near you on Nexity. ✨" push, and Secret Messages / Secret Crush show "This person was near you today / yesterday."
+
+| Module | Screen | Deep link | Doc |
+|--------|--------|-----------|-----|
+| Nearby people (Bluetooth) | `Nearby` | `nearby` | [modules/nearby/nearby-encounters.md](modules/nearby/nearby-encounters.md) |
+| Nearby settings + consent | `NearbySettings`, `NearbyConsent` (modal) | `settings/nearby` | [modules/nearby/nearby-encounters.md](modules/nearby/nearby-encounters.md#112-nearbysettings) |
+| Encounter hints in Secret features | Rows in `Premium`, `SecretThread`, `MatchCelebration` | — | [modules/nearby/nearby-encounters.md](modules/nearby/nearby-encounters.md#8-secret-message-integration) |
+
 ## Posts
 
 | Module | Screen | Deep link | Doc |

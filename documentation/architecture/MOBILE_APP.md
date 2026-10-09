@@ -69,6 +69,7 @@ RootStack (native-stack)
 │   Notifications, Inbox, ChatThread, SavedPosts, FollowRequests,
 │   Settings, PrivacySettings, AccountSettings, NotificationSettings,
 │   AppearanceSettings, BlockedAccounts, Groups, GroupDetail, AdminModeration,
+│   Nearby, NearbySettings (Home header radar · Settings → Nearby),
 │   DevComponents (debug builds only)
 │
 └── Modals (presented over tabs)
@@ -79,6 +80,7 @@ RootStack (native-stack)
     ├── MediaLightbox     (fullScreenModal, always dark)
     ├── EditPost, EditReel, EditProfile, NewMessage, CreateGroup   (modal / pageSheet)
     ├── SecretCompose     (fullScreenModal), SecretPeoplePicker (modal)
+    ├── NearbyConsent     (fullScreenModal, first time Nearby is turned on)
     ├── MatchCelebration  (fullScreenModal, transparent — fireworks over the love-theme chat)
     └── Bottom sheets (not routes): Comments, ReelComments, Likers, Share, ••• menu, Report
 ```
@@ -135,7 +137,8 @@ Shared building blocks (`react-native-permissions`), types `camera` | `photos` |
 | Photo library read (gallery picker) | `NSPhotoLibraryUsageDescription` (support **Limited** access) | API 33+: `READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO` (+ `READ_MEDIA_VISUAL_USER_SELECTED` on 34+); API ≤32: `READ_EXTERNAL_STORAGE` |
 | Save to gallery (download own media) | `NSPhotoLibraryAddUsageDescription` | API ≤28: `WRITE_EXTERNAL_STORAGE` |
 | Push notifications | Requested via `UNUserNotificationCenter` (no plist key; `Notifications` handler in the Podfile `setup_permissions`) | API 33+: `POST_NOTIFICATIONS` |
-| Location (optional "Add location" by GPS) | `NSLocationWhenInUseUsageDescription` | `ACCESS_COARSE_LOCATION` |
+| Location (optional "Add location" by GPS; Nearby location notifications) | `NSLocationWhenInUseUsageDescription` (When In Use only, never Always) | `ACCESS_COARSE_LOCATION` (+ optional `ACCESS_FINE_LOCATION`); never `ACCESS_BACKGROUND_LOCATION` |
+| Bluetooth (Nearby people) | `NSBluetoothAlwaysUsageDescription` | API 31+: `BLUETOOTH_SCAN` (`neverForLocation`), `BLUETOOTH_ADVERTISE`, `BLUETOOTH_CONNECT`; API ≤30: `BLUETOOTH`, `BLUETOOTH_ADMIN` + location — see [nearby-encounters.md §12](../modules/nearby/nearby-encounters.md#12-native-configuration) |
 
 Suggested usage strings (iOS):
 
