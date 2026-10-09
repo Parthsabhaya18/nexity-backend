@@ -44,6 +44,8 @@ Every deep-link path below works with both prefixes:
 | `settings/privacy` | `PrivacySettings` | — | Yes |
 | `settings/account` | `AccountSettings` | — | Yes |
 | `settings/subscription` | `Subscription` | — | Yes |
+| `settings/nearby` | `NearbySettings` | — | Yes |
+| `nearby` | `Nearby` | — | Yes |
 | `premium` | `Premium` (PremiumTab) | — | Yes |
 | `premium/messages` | `Premium` | `section=messages` | Yes |
 | `premium/crush` | `Premium` | `section=crush` | Yes |
@@ -87,8 +89,11 @@ Base: **`/api/v1`** (dev `http://localhost:4000/api/v1`, prod `https://api.nexit
 Authorization: Bearer <access_token>
 X-Platform: ios | android
 X-App-Version: 1.0.0
+X-Timezone: Asia/Kolkata
 Accept-Language: en-IN
 ```
+
+`X-Timezone` is the device's IANA time zone. The server uses it for calendar-day rules such as the Nearby "today / yesterday" hint ([nearby-encounters.md §10](../modules/nearby/nearby-encounters.md#10-date-and-time-logic)).
 
 ### Query parameters (common)
 

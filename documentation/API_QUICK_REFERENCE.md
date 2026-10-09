@@ -239,6 +239,21 @@ Planned ([secret-crush.md](modules/premium/secret-crush.md)).
 | GET | `/secret-crushes/matches/:matchId` |
 | POST | `/secret-crushes/matches/:matchId/celebrated` |
 
+Inbox, sent, thread, crush-list and match items carry `nearby_hint: { state: 'today' | 'yesterday' | 'locked', valid_until } | null` ([nearby-encounters.md §8](modules/nearby/nearby-encounters.md#8-secret-message-integration)).
+
+## Nearby
+
+Planned ([nearby-encounters.md](modules/nearby/nearby-encounters.md)). All routes need a bearer token; the acting user always comes from the token.
+
+| Method | Path |
+|--------|------|
+| GET | `/nearby/settings` |
+| PATCH | `/nearby/settings` (`enabled`, `bluetooth_enabled`, `location_enabled`, `notifications_enabled`, `timezone`; turning off revokes tokens and deletes presence / pings at once) |
+| POST | `/nearby/ble/tokens` (8 rotating 16-byte ids, 15 min each; `409 NEARBY_DISABLED`) |
+| POST | `/nearby/ble/sightings` (`202`; batch ≤ 50; never reveals which ids matched) |
+| GET | `/nearby/users` (mutually verified Bluetooth presence only, blocks removed) |
+| POST | `/nearby/location` (`202`; accuracy / age checked, rounded, kept 15 min) |
+
 ## Push devices
 
 | Method | Path |

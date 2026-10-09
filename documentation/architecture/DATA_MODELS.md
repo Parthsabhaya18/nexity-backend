@@ -313,7 +313,24 @@ Module `backend/src/modules/secret-crush/` — [secret-crush.md](../modules/prem
 
 **Conversation additions:** `origin` (`null` \| `secret_message` \| `secret_crush_match`), `theme` (`null` \| `love`). Messages copied in from a revealed thread carry `meta { origin: 'secret_message', sent_at }`.
 
-**Notification additions:** `actor_id` becomes **nullable**; it is always `null` for anonymous types (`secret_message_received`, `secret_message_followup`, `crush_added`). New field `entity_id` (thread / match public id).
+**Notification additions:** `actor_id` becomes **nullable**; it is always `null` for anonymous types (`secret_message_received`, `secret_message_followup`, `crush_added`, `nearby_encounter`). New field `entity_id` (thread / match public id).
+
+## Nearby
+
+Module `backend/src/modules/nearby/` — [nearby-encounters.md §7](../modules/nearby/nearby-encounters.md#7-mongodb-data-model). No collection keeps coordinates longer than 15 minutes, and no encounter history is kept (one row per pair, latest only).
+
+**User additions:** `nearby { enabled, bluetooth_enabled, location_enabled, notifications_enabled, timezone (IANA, default Asia/Kolkata), consented_at, updated_at }` — all switches default `false`. Never part of the public user DTO.
+
+| Collection | Key fields | Indexes / TTL |
+|---|---|---|
+| `nearby_ble_tokens` | `token_hash` (sha256 of the 16-byte id), `user_id`, `valid_from`, `valid_until`, `revoked_at`, `expire_at` | unique `token_hash`; `{ user_id, valid_until: -1 }`; TTL `expire_at` (+1 h) |
+| `nearby_sightings` | `reporter_id`, `subject_id`, `token_hash`, `first_seen_at`, `last_seen_at`, `count`, `rssi_bucket` | unique `{ reporter_id, token_hash }`; `{ subject_id, reporter_id, last_seen_at: -1 }`; TTL (+30 min) |
+| `nearby_presence` | `viewer_id`, `subject_id`, `verified_at` | unique `{ viewer_id, subject_id }`; TTL (+5 min) |
+| `nearby_location_pings` | `user_id`, `cell` (geohash-7), `lat`, `lng` (4 decimals), `accuracy_m`, `captured_at` | `{ cell, captured_at: -1 }`; TTL (+15 min) |
+| `encounters` | `public_id`, `pair_key` (sorted ids), `participant_a`, `participant_b`, `detected_at`, `last_detected_at`, `source` (`ble` \| `location` \| `hybrid`), `validation_status`, `expires_at`, `notification_dedup_key` | unique `pair_key`; `{ participant_a, last_detected_at: -1 }`; `{ participant_b, last_detected_at: -1 }`; TTL `expires_at` |
+| `nearby_notifications` (outbox + idempotency) | `dedup_key`, `recipient_id`, `pair_key`, `notification_id`, `push_status`, `attempts`, `next_attempt_at` | unique `dedup_key`; `{ push_status, next_attempt_at }`; TTL (+7 days) |
+
+Queries always filter by time as well (TTL deletion lags).
 
 ## Hashtag
 

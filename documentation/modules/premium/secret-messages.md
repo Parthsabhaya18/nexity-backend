@@ -304,6 +304,15 @@ Anonymous types are stored with **`actor_id: null`**. The push has **no** sender
 
 Preference key `secret_messages` ([notification-settings.md](../settings/notification-settings.md)). The in-app Notifications list shows anonymous items with a mask icon and the **day only**.
 
+## 6a. Nearby hint
+
+Full rules: [nearby-encounters.md §8](../nearby/nearby-encounters.md#8-secret-message-integration).
+
+- Inbox rows, the `SecretThread` header (replacing "Name sealed until the reveal"), the reveal overlay, revealed chat headers and the sender view show one line when the two people have a valid encounter: **This person was near you today.** / **This person was near you yesterday.** Two or more calendar days ago, expired, invalid or no encounter → nothing.
+- Each thread in `/inbox`, `/sent` and `/:threadId` carries `nearby_hint: { state: 'today' | 'yesterday' | 'locked', valid_until } | null`. The key is the thread, so the receiver never learns the sender's id. `locked` (plan without `limits.nearby`) shows a blurred chip → `Plans { reason: 'nearby' }`.
+- Both people must have Nearby on. A secret-blocked sender never produces a hint.
+- A hint never creates a thread, a reply or a reveal, and the people picker has no "nearby" suggestions.
+
 ## 7. Acceptance criteria
 
 - [ ] Any user can be messaged, public or private, unless blocked or opted out; the error never says why.
@@ -315,3 +324,4 @@ Preference key `secret_messages` ([notification-settings.md](../settings/notific
 - [ ] Plus users can start 5 threads per month; the 6th returns `PLAN_LIMIT_REACHED`; a retried send never uses 2.
 - [ ] Report and anonymous block work on every plan and never reveal the sender.
 - [ ] Works in Light, Dark and every mood; VoiceOver/TalkBack read sealed items as "Sealed message".
+- [ ] Nearby hint shows "today" / "yesterday" only for a valid encounter between the two members, hides on the 2nd calendar day, and never exposes the sender's id.

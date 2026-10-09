@@ -40,7 +40,8 @@ Nexity has **3 plans: Free, Plus, Premium**. Posts, Reels, Stories and Chat are 
 | **Send** new Secret Messages | ❌ (0) | **5 / month** | **Unlimited** (fair use: 30 new / day) |
 | **Secret Crush spots** (people in your crush list at once) | ❌ (0) | **3** | **10** |
 | Mutual match → celebration + **love-theme chat** | ❌ | ✅ | ✅ |
-| "Was near you today 💫" (Nearby, separate feature) | ❌ | ✅ | ✅ |
+| Nearby people (Bluetooth) + "Someone is near you on Nexity. ✨" push ([nearby-encounters.md](../nearby/nearby-encounters.md)) | ✅ | ✅ | ✅ |
+| Nearby hint in Secret Messages / Secret Crush: "This person was near you today / yesterday." (`limits.nearby`) | 🔒 locked chip | ✅ | ✅ |
 | Premium profile badge 👑 | ❌ | ❌ | ✅ |
 | Priority support | ❌ | ❌ | ✅ |
 
@@ -57,7 +58,7 @@ Limits are **server data**, editable by admins, never hard-coded in the app. `-1
   "mrp_inr": 149,
   "price_inr": 99,
   "active": true,
-  "features": ["Open & reply to Secret Messages", "Send 5 Secret Messages a month", "Add up to 3 Secret Crushes", "Match animation & chat", "See \"Was near you today 💫\""],
+  "features": ["Open & reply to Secret Messages", "Send 5 Secret Messages a month", "Add up to 3 Secret Crushes", "Match animation & chat", "See who was near you today or yesterday"],
   "limits": {
     "secret_messages_per_month": 5,
     "secret_messages_per_day_fair_use": 30,
@@ -169,7 +170,7 @@ UI (top to bottom):
    | `secret_read` | 💌 | Someone is trying to reach you | Upgrade to open and reply. Their name and message unseal together after your 2nd reply. |
    | `crush` | 💘 | Secret Crush needs Plus or Premium | Add your crushes privately. If it's mutual, it's a match. |
    | `limit` | 👑 | You've reached your plan limit | Premium gives unlimited Secret Messages (fair use) and up to 10 Secret Crushes. |
-   | `nearby` | 💫 | See who was near you | Plus and Premium show "Was near you today 💫" — never a place, time or distance. |
+   | `nearby` | 💫 | See who was near you | Plus and Premium show "This person was near you today." in secret chats and your crush list — never a place, time or distance. |
 
    Without a reason: heading "Unlock your secret side" + "Save up to 25% when you pay yearly."
 2. **Current plan pill:** "You're on **Plus** · active until 12 Nov 2026".

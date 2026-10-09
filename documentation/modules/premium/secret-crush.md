@@ -229,6 +229,15 @@ Full fields: [DATA_MODELS.md — Secret Crush](../../architecture/DATA_MODELS.md
 
 Android channel `secret`. Preference keys `secret_crush` and `matches` ([notification-settings.md](../settings/notification-settings.md)).
 
+## 7a. Nearby hint
+
+Full rules: [nearby-encounters.md §9](../nearby/nearby-encounters.md#9-secret-crush-integration).
+
+- **Your Secret Crushes** rows, **Matches** rows, `MatchCelebration` and the love-theme chat header show **This person was near you today.** / **This person was near you yesterday.** when the two people have a valid encounter. Older, expired or missing → nothing.
+- **Never** on the "N people have a secret crush on you" card — it would reveal who added you.
+- Items in `GET /secret-crushes` and `GET /secret-crushes/matches` carry `nearby_hint` (same shape as Secret Messages). `locked` for plans without `limits.nearby`.
+- An encounter never adds a crush, creates a match, sends "your crush is nearby", or changes the admirer count.
+
 ## 8. Acceptance criteria
 
 - [ ] Paid users can add public and private accounts up to their plan's spots; Free users get `PLAN_REQUIRED` from the API even with a modified app.
@@ -240,3 +249,4 @@ Android channel `secret`. Preference keys `secret_crush` and `matches` ([notific
 - [ ] Non-mutual crushes are never revealed by any API response, count change timing, error code or notification.
 - [ ] Plan expiry pauses crushes; re-subscribing reactivates them and runs the match check.
 - [ ] Love theme uses tokens only and looks right in Light, Dark and every mood; Reduce Motion disables particles.
+- [ ] Nearby hint appears only on your own crush rows and matches, follows the today / yesterday rule, and never on the admirer card.
