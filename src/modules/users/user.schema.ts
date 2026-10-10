@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-import { usernameSchema } from '../auth/auth.schema';
-import { BIO_MAX, WEBSITE_MAX } from './user.model';
+import { passwordSchema, usernameSchema } from '../auth/auth.schema';
+import { BIO_MAX, MESSAGE_PRIVACY, WEBSITE_MAX } from './user.model';
 
 const websiteSchema = z
   .string()
@@ -35,9 +35,36 @@ export const updateMeSchema = z.object({
     .nullable()
     .optional(),
   is_private: z.boolean().optional(),
+  show_activity_status: z.boolean().optional(),
+  message_privacy: z.enum(MESSAGE_PRIVACY).optional(),
 });
 
 export type UpdateMeInput = z.infer<typeof updateMeSchema>;
+
+export const notificationSettingsSchema = z
+  .object({
+    paused: z.boolean().optional(),
+    comments: z.boolean().optional(),
+    story_likes: z.boolean().optional(),
+  })
+  .refine((v) => Object.values(v).some((x) => x !== undefined), {
+    message: 'Choose a setting to change.',
+  });
+
+export type NotificationSettingsInput = z.infer<typeof notificationSettingsSchema>;
+
+export const changePasswordSchema = z.object({
+  current_password: z
+    .string({ error: 'Enter your current password.' })
+    .min(1, 'Enter your current password.'),
+  new_password: passwordSchema,
+});
+
+export const deleteAccountSchema = z.object({
+  password: z.string({ error: 'Enter your password.' }).min(1, 'Enter your password.'),
+});
+
+export const sessionIdSchema = z.object({ sessionId: z.uuid('Session not found.') });
 
 export const MOODS = [
   'happy',

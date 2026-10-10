@@ -5,7 +5,7 @@ import { type DefaultEventsMap, Server, type Socket } from 'socket.io';
 
 import { env } from '../config/env';
 import { authenticateAccessToken } from '../middlewares/requireAuth';
-import { User } from '../modules/users/user.model';
+import { sharesActivity, User } from '../modules/users/user.model';
 import { ApiError } from '../utils/ApiError';
 import { logger } from '../utils/logger';
 
@@ -33,27 +33,43 @@ const presenceRoom = (userId: string) => `presence:${userId}`;
 const OFFLINE_GRACE_MS = env.PRESENCE_OFFLINE_GRACE_MS;
 const pendingOffline = new Map<string, ReturnType<typeof setTimeout>>();
 
-export const isOnline = (userId: string) =>
+/** Connected users who turned "Show activity status" off; they always look offline. */
+const hiddenActivity = new Set<string>();
+
+const isConnected = (userId: string) =>
   (connections.get(userId) ?? 0) > 0 || pendingOffline.has(userId);
+
+/** What other people see: false for users who hide their activity status. */
+export const isOnline = (userId: string) => !hiddenActivity.has(userId) && isConnected(userId);
 
 export function emitToUser(userId: string, event: string, payload: unknown) {
   io?.to(userRoom(userId)).emit(event, payload);
 }
 
 function emitPresence(userId: string, online: boolean, lastActiveAt: Date | null) {
+  const hidden = hiddenActivity.has(userId);
   io?.to(presenceRoom(userId)).emit('presence.update', {
     user_id: userId,
-    is_online: online,
-    last_active_at: lastActiveAt ? lastActiveAt.toISOString() : null,
+    is_online: hidden ? false : online,
+    last_active_at: lastActiveAt && !hidden ? lastActiveAt.toISOString() : null,
   });
+}
+
+/** Applies a "Show activity status" change to everyone watching this user right away. */
+export function setActivityVisible(userId: string, visible: boolean, lastActiveAt: Date | null) {
+  if (visible) hiddenActivity.delete(userId);
+  else hiddenActivity.add(userId);
+  emitPresence(userId, isConnected(userId), isConnected(userId) ? null : lastActiveAt);
 }
 
 async function authenticate(socket: ChatSocket, next: (err?: Error) => void) {
   try {
     const raw: unknown = socket.handshake.auth?.token;
     if (typeof raw !== 'string' || !raw) throw ApiError.unauthorized('Missing access token');
-    const user = await authenticateAccessToken(raw);
+    const { user } = await authenticateAccessToken(raw);
     socket.data.userId = user.id as string;
+    if (sharesActivity(user)) hiddenActivity.delete(user.id as string);
+    else hiddenActivity.add(user.id as string);
     next();
   } catch (err) {
     const apiErr = err instanceof ApiError ? err : null;
@@ -88,7 +104,7 @@ function trackPresence(socket: ChatSocket) {
       userId,
       setTimeout(() => {
         pendingOffline.delete(userId);
-        if (isOnline(userId)) return;
+        if (isConnected(userId)) return;
         const now = new Date();
         emitPresence(userId, false, now);
         User.updateOne({ _id: userId }, { $set: { last_active_at: now } }).catch(
@@ -110,13 +126,14 @@ function trackPresence(socket: ChatSocket) {
 
     if (typeof ack !== 'function') return;
     const users = await User.find({ _id: { $in: unique } })
-      .select('_id last_active_at')
+      .select('_id last_active_at show_activity_status')
       .lean();
     (ack as (data: unknown) => void)({
       data: users.map((u) => ({
         user_id: u._id.toString(),
-        is_online: isOnline(u._id.toString()),
-        last_active_at: u.last_active_at ? u.last_active_at.toISOString() : null,
+        is_online: sharesActivity(u) && isOnline(u._id.toString()),
+        last_active_at:
+          u.last_active_at && sharesActivity(u) ? u.last_active_at.toISOString() : null,
       })),
     });
   });
@@ -149,6 +166,7 @@ export function closeRealtime() {
   io?.disconnectSockets(true);
   io = null;
   connections.clear();
+  hiddenActivity.clear();
   pendingOffline.forEach(clearTimeout);
   pendingOffline.clear();
 }

@@ -2,6 +2,7 @@ import mongoose, { Types } from 'mongoose';
 
 import { emitToUser, isOnline } from '../../realtime/io';
 import { ApiError } from '../../utils/ApiError';
+import { Follow } from '../follows/follow.model';
 import { Media } from '../media/media.model';
 import type { MediaKind } from '../media/media.rules';
 import { viewUrl } from '../media/media.storage';
@@ -11,6 +12,7 @@ import { Story } from '../stories/story.model';
 import {
   PUBLIC_USER_FIELDS,
   type PublicUserSource,
+  sharesActivity,
   toPublicUserDto,
   User,
   withAvatarUrls,
@@ -60,7 +62,7 @@ function participantDto(id: string, users: UserMap) {
         avatar_url: null,
         last_active_at: null,
       };
-  return { ...base, is_online: isOnline(id) };
+  return { ...base, is_online: sharesActivity(user) && isOnline(id) };
 }
 
 type ReplySource = Pick<
@@ -806,6 +808,27 @@ export async function listMessages(
   };
 }
 
+/**
+ * "Who can message you: People you follow". Once the recipient has written in the chat
+ * themselves, the conversation stays open both ways.
+ */
+async function assertPeerAcceptsMessages(convo: ConversationAttrs, senderId: string) {
+  if (convo.type !== 'direct') return;
+  const peerId = convo.participant_ids.find((id) => id.toString() !== senderId);
+  if (!peerId) return;
+  const peer = await User.findById(peerId).select('username message_privacy').lean();
+  if (!peer || peer.message_privacy !== 'following') return;
+  const [follows, replied] = await Promise.all([
+    Follow.exists({ follower_id: peerId, following_id: oid(senderId), status: 'accepted' }),
+    Message.exists({ conversation_id: convo._id, sender_id: peerId }),
+  ]);
+  if (follows || replied) return;
+  throw ApiError.forbidden(
+    `@${peer.username} only gets messages from people they follow.`,
+    'MESSAGES_RESTRICTED',
+  );
+}
+
 export async function sendMessage(
   userId: string,
   conversationId: string,
@@ -837,6 +860,7 @@ export async function sendMessage(
   // A retry after a lost response returns the stored message instead of sending it twice.
   const retried = await duplicateOf();
   if (retried) return (await toMessageDtos([retried]))[0]!;
+  await assertPeerAcceptsMessages(convo, userId);
 
   if (input.reply_to_id) {
     const target = await Message.exists({

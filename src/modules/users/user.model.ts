@@ -13,6 +13,10 @@ export const GENDERS = ['woman', 'man', 'other', 'non_binary', 'prefer_not_to_sa
 export const BIO_MAX = 150;
 export const WEBSITE_MAX = 200;
 
+export const MESSAGE_PRIVACY = ['everyone', 'following'] as const;
+export const NOTIFICATION_SETTING_KEYS = ['paused', 'comments', 'story_likes'] as const;
+export type NotificationSettingKey = (typeof NOTIFICATION_SETTING_KEYS)[number];
+
 const userSchema = new mongoose.Schema(
   {
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
@@ -36,7 +40,17 @@ const userSchema = new mongoose.Schema(
     following_count: { type: Number, default: 0, min: 0 },
     is_verified: { type: Boolean, default: false },
     role: { type: String, enum: ['user', 'moderator', 'admin'], default: 'user' },
-    status: { type: String, enum: ['active', 'disabled'], default: 'active' },
+    /** `deleted` accounts keep their row so foreign keys stay valid; email and username are released. */
+    status: { type: String, enum: ['active', 'disabled', 'deleted'], default: 'active' },
+    /** Off hides "Active now" / "Active 5m ago" from everyone. */
+    show_activity_status: { type: Boolean, default: true },
+    /** `following`: only people this user follows can start or continue a chat. */
+    message_privacy: { type: String, enum: MESSAGE_PRIVACY, default: 'everyone' },
+    notification_settings: {
+      paused: { type: Boolean, default: false },
+      comments: { type: Boolean, default: true },
+      story_likes: { type: Boolean, default: true },
+    },
     theme_preference: { type: String, enum: ['system', 'light', 'dark'], default: 'system' },
     /** When set, it replaces Light / Dark / System for the whole app. */
     mood: {
@@ -124,7 +138,12 @@ export interface PublicUserSource {
   avatar_url?: string | null;
   avatar_key?: string | null;
   last_active_at?: Date | null;
+  show_activity_status?: boolean | null;
 }
+
+/** False when the user turned "Show activity status" off. */
+export const sharesActivity = (user: { show_activity_status?: boolean | null } | null | undefined) =>
+  user?.show_activity_status !== false;
 
 /** Swaps uploaded avatars (`avatar_key`) for a viewable URL before building DTOs. */
 export function withAvatarUrls<T extends PublicUserSource>(users: readonly T[]): Promise<T[]> {
@@ -142,12 +161,23 @@ export function toPublicUserDto(user: PublicUserSource) {
     username: user.username,
     display_name: user.display_name,
     avatar_url: user.avatar_url ?? null,
-    last_active_at: user.last_active_at ? user.last_active_at.toISOString() : null,
+    last_active_at:
+      user.last_active_at && sharesActivity(user) ? user.last_active_at.toISOString() : null,
   };
 }
 
 export const PUBLIC_USER_FIELDS =
-  '_id username display_name avatar_url avatar_key last_active_at';
+  '_id username display_name avatar_url avatar_key last_active_at show_activity_status';
+
+/** Missing keys (accounts created before the setting existed) read as on. */
+export function notificationSettingsOf(user: Pick<UserAttrs, 'notification_settings'>) {
+  const s = user.notification_settings;
+  return {
+    paused: s?.paused === true,
+    comments: s?.comments !== false,
+    story_likes: s?.story_likes !== false,
+  };
+}
 
 /** Private shape for the signed-in user. Never return this for other users. */
 export async function toMeDto(user: UserDoc) {
@@ -174,6 +204,12 @@ export async function toMeDto(user: UserDoc) {
     role: user.role,
     onboarding_completed: Boolean(user.onboarding_completed_at),
     preferences: { theme: user.theme_preference, mood: user.mood ?? null },
+    privacy: {
+      show_activity_status: sharesActivity(user),
+      message_privacy: user.message_privacy ?? 'everyone',
+    },
+    notification_settings: notificationSettingsOf(user),
+    password_changed_at: user.password_changed_at.toISOString(),
     created_at: (user.get('created_at') as Date).toISOString(),
   };
 }

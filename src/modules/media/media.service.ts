@@ -7,6 +7,7 @@ import { Message } from '../messages/message.model';
 import { Post } from '../posts/post.model';
 import { Reel } from '../reels/reel.model';
 import { Story } from '../stories/story.model';
+import { SupportTicket } from '../support/supportTicket.model';
 import { User, type UserDoc } from '../users/user.model';
 import { Media, type MediaDoc } from './media.model';
 import {
@@ -36,6 +37,7 @@ const PURPOSE_LABEL: Record<MediaPurpose, string> = {
   reel: 'Reels',
   story: 'Story videos',
   message: 'Videos in messages',
+  support: 'Screenshots',
 };
 
 const partCountOf = (media: MediaDoc) => Math.ceil(media.bytes / media.part_size!);
@@ -410,6 +412,9 @@ export async function deleteMedia(user: UserDoc, id: string) {
   }
   if (await User.exists({ avatar_media_id: media._id })) {
     throw ApiError.conflict('This file is your profile photo.', 'MEDIA_IN_USE');
+  }
+  if (await SupportTicket.exists({ 'screenshots.media_id': media._id })) {
+    throw ApiError.conflict('This file is attached to a support request.', 'MEDIA_IN_USE');
   }
   await discard(media);
 }

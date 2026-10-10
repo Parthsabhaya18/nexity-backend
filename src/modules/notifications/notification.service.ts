@@ -1,7 +1,13 @@
 import { type Types } from 'mongoose';
 
 import { ApiError } from '../../utils/ApiError';
-import { avatarUrlOf, User, type UserDoc } from '../users/user.model';
+import {
+  avatarUrlOf,
+  type NotificationSettingKey,
+  notificationSettingsOf,
+  User,
+  type UserDoc,
+} from '../users/user.model';
 import { Notification, type NotificationType } from './notification.model';
 
 const pageOf = (limit: number) => Math.min(50, Math.max(1, limit || 20));
@@ -45,6 +51,17 @@ function snippet(body: string) {
   return body.replace(/\s+/g, ' ').trim().slice(0, 80);
 }
 
+/** False when the recipient paused notifications or turned this kind off. */
+export async function wantsNotification(
+  recipientId: Types.ObjectId,
+  kind: Exclude<NotificationSettingKey, 'paused'>,
+) {
+  const recipient = await User.findById(recipientId).select('notification_settings').lean();
+  if (!recipient) return false;
+  const settings = notificationSettingsOf(recipient);
+  return !settings.paused && settings[kind];
+}
+
 /** In-app activity. Skips notifying yourself. */
 export async function notifyComment(opts: {
   actor: UserDoc;
@@ -57,6 +74,7 @@ export async function notifyComment(opts: {
   reply?: boolean;
 }) {
   if (opts.actor._id.equals(opts.recipientId)) return;
+  if (!(await wantsNotification(opts.recipientId, 'comments'))) return;
   const action =
     opts.kind === 'reel'
       ? 'commented on your reel'

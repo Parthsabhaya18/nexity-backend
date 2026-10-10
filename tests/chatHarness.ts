@@ -64,7 +64,7 @@ export async function person(
     is_verified: true,
     ...overrides,
   });
-  return { id: user.id as string, token: signAccessToken(user.id as string), username };
+  return { id: user.id as string, token: signAccessToken(user.id as string, randomUUID()), username };
 }
 
 export const api = (who: Person) => ({

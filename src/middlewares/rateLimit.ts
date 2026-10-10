@@ -42,6 +42,11 @@ export const mediaUploadLimiter = limiter(150, account);
 
 export const profileUpdateLimiter = limiter(60, account);
 
+/** Change password and delete account check the password; stops guessing from a stolen session. */
+export const passwordLimiter = limiter(10, account);
+
+export const supportLimiter = limiter(10, account);
+
 /** Follow, unfollow and request actions; stops follow-spam bots. */
 export const followLimiter = limiter(200, account);
 
