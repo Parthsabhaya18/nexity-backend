@@ -1,4 +1,4 @@
-export const MEDIA_PURPOSES = ['avatar', 'post', 'story', 'reel', 'message'] as const;
+export const MEDIA_PURPOSES = ['avatar', 'post', 'story', 'reel', 'message', 'support'] as const;
 export type MediaPurpose = (typeof MEDIA_PURPOSES)[number];
 
 export const MEDIA_KINDS = ['image', 'video', 'audio'] as const;
@@ -55,6 +55,8 @@ export const VIDEO_MAX_BYTES = 200 * MB;
 /** Story photos share the video ceiling. */
 export const STORY_IMAGE_MAX_BYTES = 200 * MB;
 export const VOICE_MAX_BYTES = 10 * MB;
+/** Contact us screenshots. */
+export const SUPPORT_IMAGE_MAX_BYTES = 5 * MB;
 /** Longest voice message, like Instagram. Mirrored in the app's mediaRules.ts. */
 export const VOICE_MAX_MS = 60 * SECOND;
 
@@ -79,6 +81,7 @@ export const MEDIA_RULES: Record<MediaPurpose, Partial<Record<MediaKind, KindRul
     video: video(VIDEO_MAX_MS),
     audio: { maxBytes: VOICE_MAX_BYTES, maxDurationMs: VOICE_MAX_MS },
   },
+  support: { image: { maxBytes: SUPPORT_IMAGE_MAX_BYTES } },
 };
 
 /** Most files one post, story batch or message can hold (enforced where they are created). */
@@ -88,6 +91,7 @@ export const MAX_ITEMS: Record<MediaPurpose, number> = {
   reel: 1,
   story: 10,
   message: 10,
+  support: 4,
 };
 
 export function formatDuration(ms: number) {
@@ -115,6 +119,7 @@ export const KEY_FOLDERS: Record<MediaPurpose, string> = {
   story: 'stories',
   reel: 'reels',
   message: 'messages',
+  support: 'support',
 };
 
 export function formatBytes(bytes: number) {

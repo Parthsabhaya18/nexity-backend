@@ -11,6 +11,7 @@ import { Media } from '../media/media.model';
 import { deleteObjects, viewUrl } from '../media/media.storage';
 import { avatarUrlOf, User, type UserDoc } from '../users/user.model';
 import { Notification } from '../notifications/notification.model';
+import { wantsNotification } from '../notifications/notification.service';
 import { Post } from '../posts/post.model';
 import { getPost } from '../posts/post.service';
 import { Reel } from '../reels/reel.model';
@@ -460,7 +461,11 @@ export async function setStoryLike(viewer: UserDoc, storyId: string, want: boole
       { $setOnInsert: { story_id: story._id, user_id: viewer._id } },
       { upsert: true },
     );
-    if (res.upsertedCount > 0 && !story.author_id.equals(viewer._id)) {
+    if (
+      res.upsertedCount > 0 &&
+      !story.author_id.equals(viewer._id) &&
+      (await wantsNotification(story.author_id, 'story_likes'))
+    ) {
       await Notification.create({
         recipient_id: story.author_id,
         actor_id: viewer._id,

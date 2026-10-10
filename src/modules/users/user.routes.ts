@@ -1,6 +1,11 @@
 import { Router } from 'express';
 
-import { followLimiter, profileUpdateLimiter, searchLimiter } from '../../middlewares/rateLimit';
+import {
+  followLimiter,
+  passwordLimiter,
+  profileUpdateLimiter,
+  searchLimiter,
+} from '../../middlewares/rateLimit';
 import { requireAuth } from '../../middlewares/requireAuth';
 import { me } from '../auth/auth.controller';
 import {
@@ -17,7 +22,16 @@ import { savedPosts } from '../posts/post.routes';
 import { savedAll, userReels } from '../reels/reel.routes';
 import { block, blocked, mute, unblock, unmute } from '../safety/safety.controller';
 import { mentionSuggestions, suggestions } from '../search/search.controller';
-import { updateMe, updatePreferences } from './user.controller';
+import {
+  changePassword,
+  deleteAccount,
+  logoutOtherSessions,
+  logoutSession,
+  sessions,
+  updateMe,
+  updateNotificationSettings,
+  updatePreferences,
+} from './user.controller';
 import { searchUsers } from './user.search';
 
 export const usersRouter = Router();
@@ -32,6 +46,12 @@ usersRouter.get('/mention-suggestions', searchLimiter, mentionSuggestions);
 usersRouter.get('/search', searchLimiter, searchUsers);
 usersRouter.patch('/me', profileUpdateLimiter, updateMe);
 usersRouter.patch('/me/preferences', profileUpdateLimiter, updatePreferences);
+usersRouter.patch('/me/notification-settings', profileUpdateLimiter, updateNotificationSettings);
+usersRouter.post('/me/password', passwordLimiter, changePassword);
+usersRouter.get('/me/sessions', sessions);
+usersRouter.delete('/me/sessions', profileUpdateLimiter, logoutOtherSessions);
+usersRouter.delete('/me/sessions/:sessionId', profileUpdateLimiter, logoutSession);
+usersRouter.delete('/me', passwordLimiter, deleteAccount);
 usersRouter.get('/me/saved-posts', savedPosts);
 /** Saved posts and reels together, for the Saved grid and viewer. */
 usersRouter.get('/me/saved', savedAll);

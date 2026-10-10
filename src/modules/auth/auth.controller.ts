@@ -16,7 +16,7 @@ import type { SendResult } from './otp.service';
 import { RESEND_COOLDOWN_SECONDS } from './otp.service';
 import type { DeviceInfo } from './tokens';
 
-function deviceOf(req: Request): DeviceInfo {
+export function deviceOf(req: Request): DeviceInfo {
   const header = (name: string) => {
     const v = req.get(name);
     return v ? v.slice(0, 100) : null;

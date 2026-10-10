@@ -87,7 +87,7 @@ After a failure the app resumes with `GET /media/:id/parts` and sends only the m
 
 - Use `pickFromLibrary(purpose, { kind?, limit? })` or `captureWithCamera(purpose, kind)`, then `useMediaUpload(purpose).start(files)`; it resolves with assets in the same order (carousel order).
 - The file is sent as `{ uri, type, name }` from its `file://` / `content://` URI — never read into base64 or JS memory. Policy fields go **before** the file (S3 ignores fields after `file`).
-- **Images** are resized on the device (long edge: avatar 640, post 1440, story/reel 1920, message 1600) and re-encoded as JPEG at quality 0.8. iOS HEIC is exported as JPEG and MOV as MP4.
+- **Images** are resized on the device (long edge: avatar 640, post 1440, story/reel 1920, message and support 1600) and re-encoded as JPEG at quality 0.8. iOS HEIC is exported as JPEG and MOV as MP4.
 - **Edited photos** (Stories canvas, filters): `bakeImage(file, { ratio, transform, matrix })` renders the final photo on the device with Skia — upright copy first (HEIC → JPEG, EXIF rotation applied), then fit over a blurred copy or fill, zoom/pan, filter and adjustments — at most **1080 px wide** (Stories 1080×1920) as JPEG 0.8, then uploads it like any other file.
 - **Video** over 10 MB is compressed on the device with `react-native-compressor` (`auto`, MP4) to a long edge of 1920 px (1080p, ~2–3.5 Mbps), or 1280 px (720p) for messages. If compression fails, the original file is used, as long as it is within the size limit.
 - **Instagram limits** (`MEDIA_RULES` / `MAX_ITEMS` in both `media.rules.ts` and `mediaRules.ts`):
@@ -99,6 +99,7 @@ After a failure the app resumes with `GET /media/:id/parts` and sends only the m
   | `reel` | Video | 1 | 200 MB | 2 min |
   | `story` | Photo, video | 10 | 200 MB | 2 min (photos show for 5 s) |
   | `message` | Photo, video | 10 | Photo 10 MB, video 200 MB | No limit |
+  | `support` | Photo (Contact us screenshots) | 4 | 5 MB | – |
 
   Length is checked after picking (and read from the file when the picker omits it), before compression, with 1 s of tolerance. The camera stops recording at the limit (`durationLimit`). The server rejects a declared `duration_ms` over the limit with `400 MEDIA_TOO_LONG` (`details.max_duration_ms`). Size is checked on the compressed file just before upload ("Photos / Videos can be up to N MB") and again by the server (`400 MEDIA_TOO_LARGE`, `details.max_bytes`) when the upload starts, by S3 during the transfer, and on the stored object at `complete`. Item counts are enforced again by the post, story and message endpoints.
 - Progress: processing (images 5%, videos 40%), then the S3 transfer, then 5% verification. `onPhase` reports `processing` / `uploading`. Two files upload in parallel.

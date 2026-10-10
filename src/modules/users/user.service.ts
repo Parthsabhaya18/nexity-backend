@@ -1,12 +1,20 @@
 import mongoose from 'mongoose';
 
+import { setActivityVisible } from '../../realtime/io';
 import { ApiError } from '../../utils/ApiError';
 import { logger } from '../../utils/logger';
 import { acceptAllPending } from '../follows/follow.service';
 import { Media } from '../media/media.model';
 import { deleteMedia } from '../media/media.service';
-import { toMeDto, User, type UserDoc } from './user.model';
-import type { PreferencesInput, UpdateMeInput } from './user.schema';
+import {
+  NOTIFICATION_SETTING_KEYS,
+  notificationSettingsOf,
+  sharesActivity,
+  toMeDto,
+  User,
+  type UserDoc,
+} from './user.model';
+import type { NotificationSettingsInput, PreferencesInput, UpdateMeInput } from './user.schema';
 
 const MONGO_DUPLICATE_KEY = 11000;
 
@@ -57,6 +65,13 @@ export async function updateMe(user: UserDoc, input: UpdateMeInput) {
   if (input.website !== undefined) user.website = input.website;
   const goingPublic = user.is_private && input.is_private === false;
   if (input.is_private !== undefined) user.is_private = input.is_private;
+  const activityChanged =
+    input.show_activity_status !== undefined &&
+    input.show_activity_status !== sharesActivity(user);
+  if (input.show_activity_status !== undefined) {
+    user.show_activity_status = input.show_activity_status;
+  }
+  if (input.message_privacy !== undefined) user.message_privacy = input.message_privacy;
   const replaced =
     input.avatar_media_id !== undefined ? await applyAvatar(user, input.avatar_media_id) : null;
 
@@ -69,6 +84,9 @@ export async function updateMe(user: UserDoc, input: UpdateMeInput) {
     throw err;
   }
 
+  if (activityChanged) {
+    setActivityVisible(user.id as string, sharesActivity(user), user.last_active_at ?? null);
+  }
   if (replaced) {
     // The profile is already saved; a leftover file only costs storage.
     deleteMedia(user, replaced.toHexString()).catch((err: unknown) =>
@@ -80,6 +98,20 @@ export async function updateMe(user: UserDoc, input: UpdateMeInput) {
     return toMeDto((await User.findById(user._id)) ?? user);
   }
   return toMeDto(user);
+}
+
+export async function updateNotificationSettings(
+  user: UserDoc,
+  input: NotificationSettingsInput,
+) {
+  const next = { ...notificationSettingsOf(user) };
+  for (const key of NOTIFICATION_SETTING_KEYS) {
+    const value = input[key];
+    if (value !== undefined) next[key] = value;
+  }
+  user.notification_settings = next;
+  await user.save();
+  return notificationSettingsOf(user);
 }
 
 /** A mood replaces Light / Dark / System until it is cleared. */

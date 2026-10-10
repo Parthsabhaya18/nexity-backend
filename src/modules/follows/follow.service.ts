@@ -5,7 +5,7 @@ import { ApiError } from '../../utils/ApiError';
 import { userSearchFilter } from '../../utils/regex';
 import { isBlockedEither } from '../safety/block.service';
 import { isMuted } from '../safety/mute.service';
-import { avatarUrlOf, User, type UserDoc } from '../users/user.model';
+import { avatarUrlOf, sharesActivity, User, type UserDoc } from '../users/user.model';
 import { Follow } from './follow.model';
 import type { ConnectionsQuery, PageQuery } from './follow.schema';
 
@@ -158,10 +158,12 @@ export async function getProfile(viewer: UserDoc, username: string) {
     follows_you: Boolean(followsYou),
     muted,
     can_view_content: isSelf || !user.is_private || status === 'accepted',
-    presence: {
-      online: isOnline(user.id as string),
-      last_active_at: user.last_active_at ? user.last_active_at.toISOString() : null,
-    },
+    presence: sharesActivity(user)
+      ? {
+          online: isOnline(user.id as string),
+          last_active_at: user.last_active_at ? user.last_active_at.toISOString() : null,
+        }
+      : { online: false, last_active_at: null },
   };
 }
 

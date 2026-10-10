@@ -13,6 +13,7 @@ import { notificationsRouter } from '../modules/notifications/notification.route
 import { reportsRouter } from '../modules/safety/safety.routes';
 import { sharesRouter } from '../modules/shares/share.routes';
 import { storiesRouter } from '../modules/stories/story.routes';
+import { supportRouter } from '../modules/support/support.routes';
 import { usersRouter } from '../modules/users/user.routes';
 
 export const apiRouter = Router();
@@ -33,3 +34,4 @@ apiRouter.use('/notifications', notificationsRouter);
 apiRouter.use('/conversations', conversationsRouter);
 apiRouter.use('/gifs', gifsRouter);
 apiRouter.use('/shares', sharesRouter);
+apiRouter.use('/support', supportRouter);
