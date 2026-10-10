@@ -45,7 +45,7 @@ type KindRule = {
 };
 
 const SECOND = 1000;
-/** Longest post, reel or story video. Mirrored in the app's mediaRules.ts. */
+/** Longest post, reel, story or message video. Mirrored in the app's mediaRules.ts. */
 export const VIDEO_MAX_MS = 120 * SECOND;
 /** Device metadata rounds durations, so a 3:00 reel may report 3:00.4. */
 export const DURATION_TOLERANCE_MS = SECOND;
@@ -70,13 +70,13 @@ const video = (maxDurationMs: number | null): KindRule => ({
 
 export const MEDIA_RULES: Record<MediaPurpose, Partial<Record<MediaKind, KindRule>>> = {
   avatar: { image: IMAGE },
-  /** Posts, reels and stories all stop at two minutes. */
+  /** Posts, reels, stories and chat videos all stop at two minutes. */
   post: { image: IMAGE, video: video(VIDEO_MAX_MS) },
   reel: { video: video(VIDEO_MAX_MS) },
   story: { image: { maxBytes: STORY_IMAGE_MAX_BYTES }, video: video(VIDEO_MAX_MS) },
   message: {
     image: IMAGE,
-    video: video(null),
+    video: video(VIDEO_MAX_MS),
     audio: { maxBytes: VOICE_MAX_BYTES, maxDurationMs: VOICE_MAX_MS },
   },
 };

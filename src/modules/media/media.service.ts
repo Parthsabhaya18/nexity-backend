@@ -5,7 +5,9 @@ import { ApiError } from '../../utils/ApiError';
 import { logger } from '../../utils/logger';
 import { Message } from '../messages/message.model';
 import { Post } from '../posts/post.model';
-import type { UserDoc } from '../users/user.model';
+import { Reel } from '../reels/reel.model';
+import { Story } from '../stories/story.model';
+import { User, type UserDoc } from '../users/user.model';
 import { Media, type MediaDoc } from './media.model';
 import {
   CONTENT_TYPES,
@@ -399,6 +401,15 @@ export async function deleteMedia(user: UserDoc, id: string) {
     })
   ) {
     throw ApiError.conflict('This file was sent in a message.', 'MEDIA_IN_USE');
+  }
+  if (await Reel.exists({ video_media_id: media._id })) {
+    throw ApiError.conflict('This file is part of a reel.', 'MEDIA_IN_USE');
+  }
+  if (await Story.exists({ media_id: media._id })) {
+    throw ApiError.conflict('This file is part of a story.', 'MEDIA_IN_USE');
+  }
+  if (await User.exists({ avatar_media_id: media._id })) {
+    throw ApiError.conflict('This file is your profile photo.', 'MEDIA_IN_USE');
   }
   await discard(media);
 }

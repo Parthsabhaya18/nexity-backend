@@ -138,7 +138,12 @@ export async function searchPlaces(viewer: UserDoc, rawQuery: string, limit: num
   const term = rawQuery.trim();
   if (!term) return [];
   const rows = await Post.aggregate<{ _id: string; post_count: number }>([
-    { $match: { location_name: new RegExp(`(^|\\s)${escapeRegex(term)}`, 'i') } },
+    {
+      $match: {
+        location_name: new RegExp(`(^|\\s)${escapeRegex(term)}`, 'i'),
+        deleted_at: null,
+      },
+    },
     { $sort: { _id: -1 } },
     { $limit: 2000 },
     { $lookup: { from: 'users', localField: 'author_id', foreignField: '_id', as: 'author' } },

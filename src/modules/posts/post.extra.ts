@@ -74,6 +74,68 @@ async function visiblePost(viewer: UserDoc, postId: string) {
 
 /** How many of the newest eligible posts the home feed shuffles. */
 const FEED_POOL = 500;
+const FEED_BATCH = 200;
+
+/**
+ * Newest posts this viewer may see. Walks posts from newest and only looks up
+ * authors of those posts, instead of loading every public account.
+ * The viewer and people they follow are included even when private.
+ * Blocked and muted authors are skipped.
+ */
+async function newestEligiblePosts(
+  viewerId: Types.ObjectId,
+  followedIds: Types.ObjectId[],
+  hidden: Types.ObjectId[],
+) {
+  const allowed = new Set<string>([
+    viewerId.toHexString(),
+    ...followedIds.map((id) => id.toHexString()),
+  ]);
+  const authorOk = new Map<string, boolean>();
+  const selected: { _id: Types.ObjectId }[] = [];
+  let before: Types.ObjectId | undefined;
+
+  while (selected.length < FEED_POOL) {
+    const filter: Record<string, unknown> = { deleted_at: null };
+    if (hidden.length) filter.author_id = { $nin: hidden };
+    if (before) filter._id = { $lt: before };
+    const batch = await Post.find(filter)
+      .sort({ _id: -1 })
+      .limit(FEED_BATCH)
+      .select('_id author_id')
+      .lean();
+    if (!batch.length) break;
+
+    const unknown = [
+      ...new Set(
+        batch
+          .map((post) => post.author_id.toHexString())
+          .filter((id) => !allowed.has(id) && !authorOk.has(id)),
+      ),
+    ];
+    if (unknown.length) {
+      const users = await User.find({ _id: { $in: unknown } })
+        .select('is_private status')
+        .lean();
+      const found = new Map(users.map((user) => [user._id.toHexString(), user]));
+      for (const id of unknown) {
+        const user = found.get(id);
+        authorOk.set(id, Boolean(user && user.status === 'active' && !user.is_private));
+      }
+    }
+
+    for (const post of batch) {
+      const authorId = post.author_id.toHexString();
+      if (allowed.has(authorId) || authorOk.get(authorId)) {
+        selected.push({ _id: post._id });
+        if (selected.length >= FEED_POOL) break;
+      }
+    }
+    before = batch[batch.length - 1]!._id;
+    if (batch.length < FEED_BATCH) break;
+  }
+  return selected;
+}
 
 const shuffleKey = (seed: string, id: string) =>
   createHash('sha1').update(seed + id).digest('hex').slice(0, 16);
@@ -96,25 +158,11 @@ export async function feed(viewer: UserDoc, cursor: string | undefined, limit: n
     mutedIdsFor(viewer._id),
   ]);
   const hidden = [...blocked, ...muted];
-  const publicAuthors = await User.find({
-    is_private: false,
-    status: 'active',
-    _id: { $nin: hidden },
-  })
-    .select('_id')
-    .lean();
   const hiddenSet = new Set(hidden.map((id) => id.toHexString()));
-  const authorIds = [
-    viewer._id,
-    ...follows.map((f) => f.following_id).filter((id) => !hiddenSet.has(id.toHexString())),
-    ...publicAuthors.map((u) => u._id),
-  ];
-
-  const pool = await Post.find({ author_id: { $in: authorIds }, deleted_at: null })
-    .sort({ _id: -1 })
-    .limit(FEED_POOL)
-    .select('_id')
-    .lean();
+  const followedIds = follows
+    .map((f) => f.following_id)
+    .filter((id) => !hiddenSet.has(id.toHexString()));
+  const pool = await newestEligiblePosts(viewer._id, followedIds, hidden);
   const ordered = pool
     .map((p) => ({ id: p._id, key: shuffleKey(seed, p._id.toHexString()) }))
     .filter((p) => p.key > after)
@@ -323,7 +371,7 @@ export async function addComment(
     parent_id: parentId ?? null,
     body,
   });
-  if (!parentId) await Post.updateOne({ _id: post._id }, { $inc: { comments_count: 1 } });
+  await Post.updateOne({ _id: post._id }, { $inc: { comments_count: 1 } });
   await notifyComment({
     actor: viewer,
     recipientId: post.author_id,
@@ -356,11 +404,14 @@ export async function deleteComment(viewer: UserDoc, commentId: string) {
     if (!post || post.deleted_at) throw gone();
     const owner = post.author_id.equals(viewer._id) || comment.author_id.equals(viewer._id);
     if (!owner) throw ApiError.forbidden('You can only delete your own comments.');
-    await Comment.deleteMany({ $or: [{ _id: comment._id }, { parent_id: comment._id }] });
-    if (!comment.parent_id) {
+    const removed = await Comment.deleteMany({
+      $or: [{ _id: comment._id }, { parent_id: comment._id }],
+    });
+    if (removed.deletedCount > 0) {
+      await Post.updateOne({ _id: post._id }, { $inc: { comments_count: -removed.deletedCount } });
       await Post.updateOne(
-        { _id: post._id, comments_count: { $gt: 0 } },
-        { $inc: { comments_count: -1 } },
+        { _id: post._id, comments_count: { $lt: 0 } },
+        { $set: { comments_count: 0 } },
       );
     }
     return;
@@ -370,11 +421,16 @@ export async function deleteComment(viewer: UserDoc, commentId: string) {
     if (!reel || reel.deleted_at) throw gone();
     const owner = reel.author_id.equals(viewer._id) || comment.author_id.equals(viewer._id);
     if (!owner) throw ApiError.forbidden('You can only delete your own comments.');
-    await Comment.deleteOne({ _id: comment._id });
-    await Reel.updateOne(
-      { _id: reel._id, comments_count: { $gt: 0 } },
-      { $inc: { comments_count: -1 } },
-    );
+    const removed = await Comment.deleteMany({
+      $or: [{ _id: comment._id }, { parent_id: comment._id }],
+    });
+    if (removed.deletedCount > 0) {
+      await Reel.updateOne({ _id: reel._id }, { $inc: { comments_count: -removed.deletedCount } });
+      await Reel.updateOne(
+        { _id: reel._id, comments_count: { $lt: 0 } },
+        { $set: { comments_count: 0 } },
+      );
+    }
     return;
   }
   throw gone();

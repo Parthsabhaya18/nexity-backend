@@ -22,14 +22,8 @@ const LOCK_MINUTES = 15;
 // Compared against when the user doesn't exist, so response time doesn't reveal registered emails.
 const DUMMY_HASH = bcrypt.hashSync('nexity-dummy-password', BCRYPT_COST);
 
-const UNVERIFIED_HOLD_MS = 24 * 60 * 60 * 1000;
-
 const invalidCredentials = () =>
   ApiError.unauthorized('Incorrect email, username or password.', 'INVALID_CREDENTIALS');
-
-/** An unverified sign-up only reserves its username for 24 hours. */
-export const isStaleUnverified = (user: UserDoc) =>
-  !user.is_verified && Date.now() - (user.get('updated_at') as Date).getTime() > UNVERIFIED_HOLD_MS;
 
 async function session(user: UserDoc, device: DeviceInfo) {
   return { ...(await issueTokenPair(user.id as string, device)), user: await toMeDto(user) };
@@ -51,11 +45,12 @@ export async function register(input: z.infer<typeof registerSchema>) {
     );
   }
   if (byUsername && !byUsername._id.equals(byEmail?._id)) {
-    if (!isStaleUnverified(byUsername)) {
+    if (byUsername.is_verified) {
       throw ApiError.conflict('That username is taken. Try another.', 'USERNAME_TAKEN', {
         field: 'username',
       });
     }
+    // An unfinished sign-up must not lock the username. Drop it so this attempt can claim it.
     await byUsername.deleteOne();
   }
 
@@ -243,7 +238,7 @@ export async function isUsernameAvailable(raw: string) {
   const username = raw.trim().toLowerCase();
   if (!/^[a-z0-9._]{3,30}$/.test(username)) return { available: false, reason: 'invalid' as const };
   const holder = await User.findOne({ username });
-  return holder && !isStaleUnverified(holder)
-    ? { available: false, reason: 'taken' as const }
-    : { available: true };
+  // Only a verified account owns the name. An abandoned OTP attempt stays available.
+  if (holder?.is_verified) return { available: false, reason: 'taken' as const };
+  return { available: true };
 }
