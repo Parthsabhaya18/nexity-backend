@@ -19,9 +19,11 @@
 |---|---|
 | Specification (this document) | Done |
 | Clickable prototype (`frontend/prototype`) | Done — whole flow simulated in the browser, no real Bluetooth, GPS or push |
-| Backend module `backend/src/modules/nearby/` | **Not started** |
-| React Native screens and BLE / location native code | **Not started** |
-| Secret Message and Secret Crush backends (hint hosts) | **Not started** — they exist only in the docs and prototype ([§8](#8-secret-message-integration), [§9](#9-secret-crush-integration)) |
+| Backend module `backend/src/modules/nearby/` | **Location and Bluetooth done** — settings, location pings, BLE tokens, mutual sightings, `GET /nearby/users`, today / yesterday hints |
+| React Native location | **Done (foreground only)** — `NearbyLocationHost` samples while the app is open; `NearbySettings` screen (in `screens/premium/`) with separate toggles and permission buttons |
+| React Native screens and BLE native code | **Android and iOS** — `Nearby` circle, `NearbyBle` on both. The advert is only the service UUID (a 16-byte id does not fit beside it). Both platforms serve the id on a readable characteristic and read it with a short connection. Android Kotlin compiles. iOS was not compiled here (no Mac) |
+| Secret Message backend (hint host) | **Done** — the hint shows in Secret threads ([§8](#8-secret-message-integration)) |
+| Secret Crush backend (hint host) | **Done** — hint on your own crush rows, matches and the match celebration; never on the admirer card ([§9](#9-secret-crush-integration)) |
 | Push delivery (FCM / APNs) | **Not started** — no `firebase-admin`, no `Device` model, no `@react-native-firebase/*` ([§13](#13-notifications-and-reliability)) |
 | Physical-device tests | **None run** ([§14](#14-physical-device-testing)) |
 
@@ -206,7 +208,7 @@ Rule: install **one** BLE library. Verify on two physical Android phones (Step 2
 
 | Platform | Advertisement | How the scanner gets the EphID |
 |---|---|---|
-| Android | Nexity 128-bit service UUID + **service data** = EphID (16 bytes). Fits the 31-byte legacy advertisement | Read from the scan record; no connection |
+| Android | Nexity 128-bit service UUID only. The 16-byte EphID does not fit in the same 31-byte advert | Short GATT connection, read characteristic `EPH_ID` (16 bytes), disconnect |
 | iOS (foreground) | Nexity service UUID only (CoreBluetooth can't advertise service data) | Short GATT connection, read characteristic `EPH_ID` (16 bytes), disconnect. Cache per peripheral for the window |
 
 Never broadcast user ids, usernames, phone numbers, auth tokens, or any id that is stable across windows. The device name is left as the OS default and is ignored by the scanner.
@@ -649,9 +651,10 @@ Add **only** when BLE ships (Step 2):
 
 - Add `NSBluetoothAlwaysUsageDescription`: "Nexity uses Bluetooth to find people nearby who also turned on Nearby. Your location is never shown."
 - Keep `NSLocationWhenInUseUsageDescription` (already present); update text to: "Nexity uses your location only for Nearby notifications you turned on. Your place is never shown to anyone."
-- Podfile `setup_permissions`: add `BluetoothPeripheral`, `LocationWhenInUse`.
-- **No** `UIBackgroundModes` (`bluetooth-central`, `bluetooth-peripheral`, `location`) until iOS background behaviour is tested on devices.
-- iOS was not tested (no Mac available as of this doc). Every iOS row in [§14](#14-physical-device-testing) is open.
+- Podfile `setup_permissions`: `Bluetooth`, `LocationWhenInUse`, `LocationAccuracy` (precise-location prompt). `Bluetooth` covers scan and advertise on iOS 13 and newer.
+- `NSBluetoothPeripheralUsageDescription` is set as well, for the advertise prompt on older system builds.
+- `NSLocationTemporaryUsageDescriptionDictionary` key `NearbyPrecise` asks for precise location when the user chose Approximate. Nearby does not send a sample until precision is on.
+- **No** `UIBackgroundModes` (`bluetooth-central`, `bluetooth-peripheral`, `location`). Discovery runs only while Nexity is open, which is what App Review expects for this feature.
 
 ---
 

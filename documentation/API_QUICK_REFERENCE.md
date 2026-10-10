@@ -189,21 +189,24 @@ Planned ([plans-and-billing.md](modules/premium/plans-and-billing.md)). Gated ro
 | POST / DELETE | `/admin/users/:id/plan-gift` |
 | GET | `/admin/billing-events` |
 
-## Payments (Razorpay — Android & web)
+## Payments (Razorpay — Android, iOS & web)
 
-Planned ([razorpay-payments.md](modules/premium/razorpay-payments.md)). The server computes every amount; the app never sends one.
+Built ([razorpay-payments.md](modules/premium/razorpay-payments.md)). The server computes every amount; the app never sends one.
 
 | Method | Path |
 |--------|------|
 | POST | `/payments/quote` |
 | POST | `/payments/checkout` (`Idempotency-Key` header; creates a Razorpay order or AutoPay subscription) |
-| POST | `/payments/verify` (signature + amount checks) |
+| POST | `/payments/verify` (signature + amount checks; `202` while pending) |
 | GET | `/payments/checkouts/:id`, `/payments/checkouts/pending` |
+| POST | `/payments/checkouts/:id/abandon` (`{ reason: cancelled \| failed }`) |
 | POST | `/payments/qr` (single-use fixed-amount UPI QR) |
-| GET | `/payments/:paymentId/invoice` |
-| POST | `/subscriptions/me/cancel`, `/subscriptions/me/resume`, `/subscriptions/me/payment-method`, `/subscriptions/me/change` |
+| GET | `/payments/history` |
+| POST | `/payments/dev/simulate` (simulator mode only) |
+| POST | `/subscriptions/me/cancel` (stop AutoPay), `/subscriptions/me/resume` (`Idempotency-Key`; new mandate) |
 | POST | `/webhooks/razorpay` (no bearer; `X-Razorpay-Signature` on the raw body) |
-| GET / POST | `/admin/payments`, `/admin/payments/:id/refund`, `/admin/coupons`, `/admin/payments/reconciliation` |
+
+Planned: `/payments/:paymentId/invoice`, `/subscriptions/me/payment-method`, `/admin/payments*`, `/admin/coupons`.
 
 ## Secret Messages
 

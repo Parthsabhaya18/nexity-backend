@@ -438,6 +438,8 @@ function toConversationDto(convo: ConversationAttrs, viewerId: string, users: Us
     last_read_message_id: me?.last_read_message_id?.toString() ?? null,
     peer_last_read_message_id: other?.last_read_message_id?.toString() ?? null,
     is_muted: Boolean(me?.muted_until && me.muted_until > new Date()),
+    origin: convo.origin ?? null,
+    theme: convo.theme ?? null,
     created_at: timestamps.created_at.toISOString(),
     updated_at: timestamps.updated_at.toISOString(),
   };
@@ -585,6 +587,196 @@ export async function openDirectConversation(userId: string, participantId: stri
     if (!winner) throw err;
     return { conversation: await conversationFor(winner, userId), created: false };
   }
+}
+
+/**
+ * Secret Message reveal: copies the thread into the direct chat between the two (creating it
+ * when needed) behind a system line, so the conversation continues as a normal chat.
+ */
+export async function importRevealedSecret(opts: {
+  senderId: Types.ObjectId;
+  recipientId: Types.ObjectId;
+  threadPublicId: string;
+  messages: { id: string; author_id: Types.ObjectId; body: string }[];
+}) {
+  const { senderId, recipientId } = opts;
+  const directKey = directKeyOf(senderId.toString(), recipientId.toString());
+  let convo = await Conversation.findOne({ direct_key: directKey }).lean<ConversationAttrs>();
+  if (!convo) {
+    const now = new Date();
+    const member = (id: Types.ObjectId) => ({
+      user_id: id,
+      role: 'member',
+      joined_at: now,
+      last_read_message_id: null,
+      last_read_at: null,
+      unread_count: 0,
+      muted_until: null,
+      cleared_at: null,
+      hidden: false,
+    });
+    try {
+      const created = await Conversation.create({
+        type: 'direct',
+        direct_key: directKey,
+        participant_ids: [senderId, recipientId],
+        members: [member(senderId), member(recipientId)],
+        created_by: recipientId,
+        origin: 'secret_message',
+      });
+      convo = created.toObject() as ConversationAttrs;
+    } catch (err) {
+      if (!isDuplicateKey(err)) throw err;
+      convo = await Conversation.findOne({ direct_key: directKey }).lean<ConversationAttrs>();
+      if (!convo) throw err;
+    }
+  }
+
+  const rows = [
+    {
+      conversation_id: convo._id,
+      sender_id: recipientId,
+      type: 'system' as const,
+      body: 'Started as a Secret Message 💌 — unsealed',
+      client_message_id: `secret-reveal:${opts.threadPublicId}`,
+    },
+    ...opts.messages.map((m) => ({
+      conversation_id: convo._id,
+      sender_id: m.author_id,
+      type: 'text' as const,
+      body: m.body,
+      client_message_id: `secret:${m.id}`,
+    })),
+  ];
+  let inserted: MessageAttrs[] = [];
+  try {
+    inserted = (await Message.insertMany(rows, { ordered: true })).map(
+      (d) => d.toObject() as MessageAttrs,
+    );
+  } catch (err) {
+    // A retried reveal finds its messages already copied.
+    if (!isDuplicateKey(err)) throw err;
+  }
+
+  const last = inserted[inserted.length - 1];
+  if (last) {
+    const createdAt = (last as unknown as { created_at: Date }).created_at;
+    const fromRecipient = inserted.filter((m) => m.sender_id.equals(recipientId)).length;
+    await Conversation.updateOne(
+      { _id: convo._id },
+      {
+        $set: {
+          last_message: {
+            id: last._id,
+            sender_id: last.sender_id,
+            type: last.type,
+            body: previewOf(last),
+            is_deleted: false,
+            created_at: createdAt,
+          },
+          last_message_at: createdAt,
+          'members.$[revealer].last_read_message_id': last._id,
+          'members.$[revealer].last_read_at': createdAt,
+          'members.$[revealer].unread_count': 0,
+          'members.$[revealer].hidden': false,
+          'members.$[revealed].hidden': false,
+        },
+        $inc: {
+          message_count: inserted.length,
+          'members.$[revealed].unread_count': Math.max(1, fromRecipient),
+        },
+      },
+      {
+        arrayFilters: [{ 'revealer.user_id': recipientId }, { 'revealed.user_id': senderId }],
+      },
+    );
+  }
+  await broadcastConversation(convo._id);
+  return convo._id;
+}
+
+/**
+ * Secret Crush match: gets or creates the direct chat between the two, turns it into a love-theme
+ * match chat and adds the "You matched" line once. Safe to call again for the same match.
+ */
+export async function openMatchConversation(opts: {
+  userIds: [Types.ObjectId, Types.ObjectId];
+  matchPublicId: string;
+}) {
+  const [a, b] = opts.userIds;
+  const directKey = directKeyOf(a.toString(), b.toString());
+  const now = new Date();
+  const member = (id: Types.ObjectId) => ({
+    user_id: id,
+    role: 'member',
+    joined_at: now,
+    last_read_message_id: null,
+    last_read_at: null,
+    unread_count: 0,
+    muted_until: null,
+    cleared_at: null,
+    hidden: false,
+  });
+  let convo = await Conversation.findOne({ direct_key: directKey }).lean<ConversationAttrs>();
+  if (!convo) {
+    try {
+      const created = await Conversation.create({
+        type: 'direct',
+        direct_key: directKey,
+        participant_ids: [a, b],
+        members: [member(a), member(b)],
+        created_by: b,
+        origin: 'secret_crush_match',
+        theme: 'love',
+      });
+      convo = created.toObject() as ConversationAttrs;
+    } catch (err) {
+      if (!isDuplicateKey(err)) throw err;
+      convo = await Conversation.findOne({ direct_key: directKey }).lean<ConversationAttrs>();
+      if (!convo) throw err;
+    }
+  }
+
+  let line: MessageAttrs | null = null;
+  try {
+    const doc = await Message.create({
+      conversation_id: convo._id,
+      sender_id: b,
+      type: 'system',
+      body: 'You matched via Secret Crush 💘',
+      client_message_id: `crush-match:${opts.matchPublicId}`,
+    });
+    line = doc.toObject() as MessageAttrs;
+  } catch (err) {
+    // A retried match already added its line.
+    if (!isDuplicateKey(err)) throw err;
+  }
+
+  const set: Record<string, unknown> = {
+    origin: 'secret_crush_match',
+    theme: 'love',
+    'members.$[].hidden': false,
+  };
+  if (line) {
+    const createdAt = (line as unknown as { created_at: Date }).created_at;
+    set.last_message = {
+      id: line._id,
+      sender_id: line.sender_id,
+      type: line.type,
+      body: previewOf(line),
+      is_deleted: false,
+      created_at: createdAt,
+    };
+    set.last_message_at = createdAt;
+  }
+  await Conversation.updateOne(
+    { _id: convo._id },
+    line
+      ? { $set: set, $inc: { message_count: 1, 'members.$[].unread_count': 1 } }
+      : { $set: set },
+  );
+  await broadcastConversation(convo._id);
+  return convo._id;
 }
 
 export async function listMessages(

@@ -1,6 +1,15 @@
 import mongoose, { type HydratedDocument, type InferSchemaType } from 'mongoose';
 
-export const REPORT_TARGETS = ['post', 'reel', 'story', 'user', 'message', 'comment'] as const;
+export const REPORT_TARGETS = [
+  'post',
+  'reel',
+  'story',
+  'user',
+  'message',
+  'comment',
+  /** Anonymous Secret Message thread (public UUID); moderators see the sender. */
+  'secret_thread',
+] as const;
 export const REPORT_REASONS = [
   'spam',
   'harassment',

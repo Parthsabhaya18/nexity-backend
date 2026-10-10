@@ -5,10 +5,25 @@
 **Theme:** Light, Dark and every mood. Secret screens use `secretGradient`, sealed bubbles use `secretGlow` — no hard-coded colors ([THEMING.md](../../architecture/THEMING.md))  
 **Auth required:** Yes  
 **Plan:** Free = notification + locked count only · Plus = read/reply + 5 new / month · Premium = read/reply + unlimited (fair use) — [plans-and-billing.md](plans-and-billing.md)  
-**Frontend:** `frontend/src/screens/premium/secret/`, `frontend/src/features/secret/`, `frontend/src/services/api/secretMessages.ts`  
-**Backend:** `backend/src/modules/secret-messages/`  
+**Frontend:** `frontend/src/screens/premium/`, `frontend/src/components/secret/`, `frontend/src/features/secret/`, `frontend/src/services/api/secretMessages.ts`  
+**Backend:** `backend/src/modules/secret-messages/`, `backend/src/modules/subscriptions/`  
 **Security:** [SECRET_FEATURES_SECURITY.md](../../architecture/SECRET_FEATURES_SECURITY.md)  
 **Prototype:** `frontend/prototype/js/secret.js`
+
+## Implementation status
+
+What the app does today:
+
+- **Screens:** `Premium` (Messages tab with Received / Sent, search, filters, usage card, locked card for Free, Nearby status card), `SecretPeoplePicker` (modal), `SecretCompose { username }` (full-screen modal), `SecretThread { threadId }` with the reveal overlay (respects Reduce Motion), `Plans { reason? }`, `SecretBlocks`, `NearbySettings`. The Secret Crush tab shows "Coming soon".
+- **Entry points:** Premium → **Send a secret message**, a profile's ••• menu → **Send Secret Message**, notifications (`secret_*` types open `SecretThread` or, after the reveal, `ChatThread`).
+- **Permissions:** the first time Premium is focused in a session and something is missing, a sheet asks for **Notifications**, **Location** and the **Nearby** opt-in, each with its own Allow / Open Settings button. Each one can also be granted separately in Settings → **Nearby & location** and from the phone permissions list.
+- **Plan reasons** use kebab-case in the app: `secret-read`, `secret-send`, `limit`, `nearby`, `crush`.
+- **Summary** (`GET /secret-messages/summary`) also returns `locked_items [{ id, day }]` (Free only) so the locked card can list items without content.
+- **Realtime:** socket events `secret.*` and `subscription.updated` refresh the lists; the receiver's notice is delayed 30–120 s.
+- **After the reveal** the thread is copied into a direct chat with `origin: 'secret_message'`; the Chats list shows it with the "💌 Revealed" tag.
+- **Billing is not built.** Outside production, `POST /subscriptions/dev/activate` (env `DEV_PLAN_SWITCH`) lets testers switch plan from the Plans screen.
+- **Not built:** push delivery (FCM / APNs, only in-app notifications), the deep links (the app has no `linking` config yet). Secret Crush: see [secret-crush.md](secret-crush.md#implementation-status).
+- **Tested:** backend `tests/secret.test.ts` (seal / reveal, limits, follow-up cap, links, idempotency, blocks, report, nearby hint). The app typechecks and lints; not yet verified on an Android device, and iOS is not tested (no Mac).
 
 ## 1. What it is
 

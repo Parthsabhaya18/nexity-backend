@@ -5,10 +5,27 @@
 **Theme:** Light, Dark and every mood. Section uses `secretGradient`. The match chat uses the scoped **love** chat theme (tokens from the `romantic` mood palette) — no hard-coded colors ([THEMING.md](../../architecture/THEMING.md))  
 **Auth required:** Yes  
 **Plan:** Free = notification + admirer count only · Plus = 3 crush spots · Premium = 10 crush spots — [plans-and-billing.md](plans-and-billing.md)  
-**Frontend:** `frontend/src/screens/premium/crush/`, `frontend/src/features/crush/`, `frontend/src/components/celebration/`, `frontend/src/services/api/secretCrush.ts`  
+**Frontend:** `frontend/src/screens/premium/MatchCelebrationScreen.tsx`, `frontend/src/components/secret/CrushSection.tsx`, `frontend/src/components/secret/CrushHeartButton.tsx`, `frontend/src/features/crush/`, `frontend/src/components/celebration/`, `frontend/src/services/api/secretCrush.ts`  
 **Backend:** `backend/src/modules/secret-crush/`  
 **Security:** [SECRET_FEATURES_SECURITY.md](../../architecture/SECRET_FEATURES_SECURITY.md)  
 **Prototype:** `frontend/prototype/js/crush.js`, `frontend/prototype/js/chat.js` (`kind: 'match'`)
+
+## Implementation status
+
+What the app does today:
+
+- **Premium → Secret Crush** (`Premium { section: 'crush' }`): admirers card, Matches row, Your Secret Crushes (usage meter, rows with remove, paused rows, empty state, upsell for Free), **Add a Secret Crush 💘** button and the rule card.
+- **Add:** `SecretPeoplePicker { intent: 'crush' }` (tags "In your crushes" / "Matched 💘") or the **heart button** next to Follow / Message on `UserProfile`. Both open the confirm sheet; Free opens `Plans { reason: 'crush' }`, full spots show the limit dialog.
+- **Match:** `MatchCelebration { matchId }` (transparent modal) with floating hearts, three firework bursts, confetti and a heart burst built with React Native `Animated` (about 100 particles, native driver) instead of Skia. Reduce Motion shows no particles. **Say hi 👋** opens the chat with "Hi 👋" in the composer; **Open chats** opens the Chats list. The other person gets it from the socket event `crush.matched`, from the notification, or on the next launch or foreground (`pending_celebration_match_id`).
+- **Love chat:** `ChatThread` wraps itself in `ThemeScope` with `loveTheme()` when `conversation.theme === 'love'` (the romantic mood palette in Light and moods, a dark rose palette in Dark), with soft floating hearts, a "💘 Match" header chip and a "💘 You matched via Secret Crush" banner. The Chats list shows the "💘 Match" tag from `origin: 'secret_crush_match'`. There is no separate fireworks burst inside the chat; the celebration screen plays it once.
+- **Extra endpoint:** `GET /secret-crushes/status/:userId` → `{ state: 'none' | 'active' | 'paused' | 'matched', match_id, conversation_id }` for the profile heart.
+- **Differences from the spec below:**
+  - No MongoDB transaction: the unique `pair_key` and a recount after insert keep it to exactly one match and the plan's spots.
+  - The admirer count is recomputed when it's read: it goes up live, and goes down only after 00:00 IST, with no nightly job. A new crush counts only after about 2 minutes, so the count can't be matched to the notice time.
+  - `allow_secret_crush` is not built yet.
+  - Paused / active is synced when the plan changes (dev switch), on every crush read, and before a match check.
+- **Not built:** push (FCM / APNs; only in-app notifications), the `crush_admirer_waiting` reminders, deep links, store billing (outside production, `POST /subscriptions/dev/activate` switches plan).
+- **Tested:** backend `tests/crush.test.ts` covers the plan gate, anonymous notice, cooldown, duplicate, spots, mutual match with love chat, celebrating once, simultaneous adds (exactly one match), pausing on downgrade and matching on re-subscribe, blocks, and the nearby hint. The app typechecks and lints; it isn't verified on a device yet, and iOS isn't tested (no Mac).
 
 ## 1. What it is
 

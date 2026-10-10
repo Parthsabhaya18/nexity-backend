@@ -61,6 +61,13 @@ const conversationSchema = new mongoose.Schema(
     last_message: { type: lastMessageSchema, default: null },
     last_message_at: { type: Date, default: null },
     message_count: { type: Number, default: 0 },
+    /**
+     * `secret_message`: opened by a Secret Message reveal ("💌 Revealed" tag).
+     * `secret_crush_match`: opened by a mutual Secret Crush ("💘 Match" tag).
+     */
+    origin: { type: String, enum: ['secret_message', 'secret_crush_match', null], default: null },
+    /** Scoped chat theme; `love` for Secret Crush matches. */
+    theme: { type: String, enum: ['love', null], default: null },
   },
   {
     collection: 'conversations',
