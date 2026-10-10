@@ -9,7 +9,6 @@ import {
   deletePost,
   feed,
   getPost,
-  likePost,
   likePostOff,
   likePostOn,
   postComments,
@@ -27,7 +26,6 @@ export const commentsRouter = Router();
 
 postsRouter.use(requireAuth);
 postsRouter.post('/', postCreateLimiter, createPost);
-postsRouter.post('/:postId/like', likePost);
 postsRouter.put('/:postId/like', likePostOn);
 postsRouter.delete('/:postId/like', likePostOff);
 postsRouter.post('/:postId/save', savePost);

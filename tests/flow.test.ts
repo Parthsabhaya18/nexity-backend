@@ -66,6 +66,7 @@ const api = (a: Account) => ({
       .send(body ?? {}),
   patch: (path: string, body: object) =>
     request(app).patch(`/api/v1${path}`).set('Authorization', a.auth).send(body),
+  put: (path: string) => request(app).put(`/api/v1${path}`).set('Authorization', a.auth),
   del: (path: string) => request(app).delete(`/api/v1${path}`).set('Authorization', a.auth),
 });
 
@@ -196,7 +197,7 @@ describe('app journey', () => {
     expect((await api(aarav).get(`/users/${meera.id}/posts`)).body.items).toHaveLength(1);
     expect((await api(meera).get('/users/me')).body.posts_count).toBe(1);
 
-    const liked = await api(aarav).post(`/posts/${postId}/like`);
+    const liked = await api(aarav).put(`/posts/${postId}/like`);
     expect(liked.body.liked).toBe(true);
     expect((await api(aarav).post(`/posts/${postId}/save`)).body.saved).toBe(true);
     expect((await api(aarav).get('/users/me/saved-posts')).body.items[0].id).toBe(postId);

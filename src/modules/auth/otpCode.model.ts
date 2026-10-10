@@ -22,5 +22,6 @@ const otpCodeSchema = new mongoose.Schema(
 );
 
 otpCodeSchema.index({ user_id: 1, purpose: 1 }, { unique: true });
+otpCodeSchema.index({ expires_at: 1 }, { expireAfterSeconds: 0 });
 
 export const OtpCode = mongoose.model('OtpCode', otpCodeSchema);

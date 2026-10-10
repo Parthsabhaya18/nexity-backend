@@ -224,13 +224,22 @@ export async function viewUrl(key: string): Promise<string> {
   if (env.MEDIA_PUBLIC_BASE_URL || !isMediaConfigured) return publicUrl(key);
   const now = Date.now();
   const cached = signedViews.get(key);
-  if (cached && cached.renewAt > now) return cached.url;
+  if (cached && cached.renewAt > now) {
+    signedViews.delete(key);
+    signedViews.set(key, cached);
+    return cached.url;
+  }
 
   const url = await getSignedUrl(s3(), new GetObjectCommand({ Bucket: bucket(), Key: key }), {
     expiresIn: SIGNED_VIEW_TTL_SECONDS,
   });
-  if (signedViews.size >= SIGNED_VIEW_CACHE_MAX) signedViews.clear();
+  signedViews.delete(key);
   signedViews.set(key, { url, renewAt: now + SIGNED_VIEW_REUSE_MS });
+  while (signedViews.size > SIGNED_VIEW_CACHE_MAX) {
+    const oldest = signedViews.keys().next().value;
+    if (oldest === undefined) break;
+    signedViews.delete(oldest);
+  }
   return url;
 }
 

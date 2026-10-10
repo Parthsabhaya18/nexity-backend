@@ -10,8 +10,8 @@ import { extractMentions, MAX_MENTIONS } from './caption';
 import { PostLike, PostSave } from './post.engage.model';
 import { Post, type PostDoc } from './post.model';
 import type { CreatePostInput } from './post.schema';
+import { MONGO_DUPLICATE_KEY } from '../../utils/mongo';
 
-const MONGO_DUPLICATE_KEY = 11000;
 
 const isDuplicateKey = (err: unknown) =>
   err instanceof mongoose.mongo.MongoServerError && err.code === MONGO_DUPLICATE_KEY;

@@ -60,7 +60,8 @@ const conversationSchema = new mongoose.Schema(
     created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     last_message: { type: lastMessageSchema, default: null },
     last_message_at: { type: Date, default: null },
-    message_count: { type: Number, default: 0 },
+    /** Messages ever sent that have not been unsent. Not shown in the app. */
+    message_count: { type: Number, default: 0, min: 0 },
     /**
      * `secret_message`: opened by a Secret Message reveal ("💌 Revealed" tag).
      * `secret_crush_match`: opened by a mutual Secret Crush ("💘 Match" tag).

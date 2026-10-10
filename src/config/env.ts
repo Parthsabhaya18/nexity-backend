@@ -12,7 +12,7 @@ const envSchema = z
     CORS_ORIGINS: z
       .string()
       .default('*')
-      .transform((v) => v.split(',').map((o) => o.trim())),
+      .transform((v) => v.split(',').map((o) => o.trim()).filter(Boolean)),
     LOG_LEVEL: z
       .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
       .default('info'),
@@ -76,6 +76,11 @@ const envSchema = z
     GIPHY_RATING: z.enum(['g', 'pg', 'pg-13', 'r']).default('pg-13'),
     /** How long a user stays "online" after their last chat socket drops. */
     PRESENCE_OFFLINE_GRACE_MS: z.coerce.number().int().min(0).max(120_000).default(15_000),
+    /**
+     * Shared by Socket.IO and the rate limiters when more than one API process runs.
+     * Leave empty for a single server.
+     */
+    REDIS_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
 
     /** 32 random bytes (base64) used to encrypt Secret Message bodies at rest. Required in production. */
     SECRET_MESSAGES_KEY: z.preprocess(emptyToUndefined, z.string().trim().optional()),
@@ -184,6 +189,11 @@ const parsed = envSchema.safeParse(process.env);
 
 if (!parsed.success) {
   console.error(`Invalid environment configuration:\n${z.prettifyError(parsed.error)}`);
+  process.exit(1);
+}
+
+if (parsed.data.NODE_ENV === 'production' && parsed.data.CORS_ORIGINS.includes('*')) {
+  console.error('FATAL: CORS_ORIGINS must list real origins in production. A wildcard is not allowed.');
   process.exit(1);
 }
 

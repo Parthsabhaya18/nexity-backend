@@ -4,8 +4,8 @@ import { ApiError } from '../../utils/ApiError';
 import { Follow } from '../follows/follow.model';
 import { avatarUrlOf, User, type UserDoc } from '../users/user.model';
 import { Block } from './block.model';
+import { MONGO_DUPLICATE_KEY } from '../../utils/mongo';
 
-const MONGO_DUPLICATE_KEY = 11000;
 
 async function dropFollow(followerId: Types.ObjectId, followingId: Types.ObjectId) {
   const removed = await Follow.findOneAndDelete({
@@ -80,12 +80,23 @@ export async function unblockUser(viewer: UserDoc, targetId: string) {
   await Block.deleteOne({ blocker_id: viewer._id, blocked_id: targetId });
 }
 
-export async function listBlocked(viewer: UserDoc) {
-  const rows = await Block.find({ blocker_id: viewer._id }).sort({ _id: -1 }).limit(100);
-  const users = await User.find({ _id: { $in: rows.map((r) => r.blocked_id) }, status: 'active' });
+export async function listBlocked(
+  viewer: UserDoc,
+  { cursor, limit }: { cursor?: string; limit: number },
+) {
+  const filter: Record<string, unknown> = { blocker_id: viewer._id };
+  if (cursor) filter._id = { $lt: cursor };
+  const [total, rows] = await Promise.all([
+    Block.countDocuments({ blocker_id: viewer._id }),
+    Block.find(filter)
+      .sort({ _id: -1 })
+      .limit(limit + 1),
+  ]);
+  const page = rows.slice(0, limit);
+  const users = await User.find({ _id: { $in: page.map((r) => r.blocked_id) }, status: 'active' });
   const byId = new Map(users.map((u) => [u.id as string, u]));
   const items = [];
-  for (const row of rows) {
+  for (const row of page) {
     const user = byId.get(row.blocked_id.toHexString());
     if (!user) continue;
     items.push({
@@ -95,5 +106,9 @@ export async function listBlocked(viewer: UserDoc) {
       avatar_url: await avatarUrlOf(user),
     });
   }
-  return { items };
+  return {
+    items,
+    next_cursor: rows.length > limit ? (page[page.length - 1]!._id.toHexString() as string) : null,
+    total,
+  };
 }

@@ -6,6 +6,7 @@ import { logger } from '../../utils/logger';
 import { acceptAllPending } from '../follows/follow.service';
 import { Media } from '../media/media.model';
 import { deleteMedia } from '../media/media.service';
+import { MONGO_DUPLICATE_KEY } from '../../utils/mongo';
 import {
   NOTIFICATION_SETTING_KEYS,
   notificationSettingsOf,
@@ -16,7 +17,6 @@ import {
 } from './user.model';
 import type { NotificationSettingsInput, PreferencesInput, UpdateMeInput } from './user.schema';
 
-const MONGO_DUPLICATE_KEY = 11000;
 
 const usernameTaken = () =>
   ApiError.conflict('That username is taken. Try another.', 'USERNAME_TAKEN', {

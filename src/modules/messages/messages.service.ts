@@ -9,6 +9,7 @@ import { viewUrl } from '../media/media.storage';
 import { Post } from '../posts/post.model';
 import { Reel } from '../reels/reel.model';
 import { Story } from '../stories/story.model';
+import { MONGO_DUPLICATE_KEY } from '../../utils/mongo';
 import {
   PUBLIC_USER_FIELDS,
   type PublicUserSource,
@@ -27,7 +28,6 @@ import { EDIT_WINDOW_MS, Message, type MessageAttrs } from './message.model';
 import type { SendMessageInput } from './messages.schema';
 
 const PREVIEW_LENGTH = 200;
-const MONGO_DUPLICATE_KEY = 11000;
 
 type Page = { cursor?: string; limit: number };
 
@@ -1044,6 +1044,10 @@ export async function unsendMessage(userId: string, conversationId: string, mess
 
   const deletedAt = new Date();
   await Message.updateOne({ _id: message._id }, { $set: { deleted_at: deletedAt } });
+  await Conversation.updateOne(
+    { _id: convo._id, message_count: { $gt: 0 } },
+    { $inc: { message_count: -1 } },
+  );
   if (convo.last_message?.id.equals(message._id)) {
     await refreshLastMessage(convo._id);
   }

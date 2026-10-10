@@ -13,6 +13,7 @@ import { notifySystem } from '../notifications/notification.service';
 import { Notification } from '../notifications/notification.model';
 import { isBlockedEither } from '../safety/block.service';
 import { type REPORT_REASONS, Report } from '../safety/report.model';
+import { MONGO_DUPLICATE_KEY } from '../../utils/mongo';
 import {
   entitlementOf,
   planRequired,
@@ -36,7 +37,6 @@ import {
   type SecretThreadAttrs,
 } from './secret.models';
 
-const MONGO_DUPLICATE_KEY = 11000;
 export const FIRST_MIN = 3;
 export const FIRST_MAX = 300;
 export const BODY_MAX = 500;
@@ -48,9 +48,12 @@ const LIST_MAX = 50;
 export const RECEIVED_NOTICE = 'Someone is trying to reach you with a Secret Message 💌';
 const FOLLOWUP_NOTICE = 'Someone sent you another secret message 💌';
 
-/** http(s)://, www., or a bare domain with a path or a common TLD. */
+/**
+ * http(s)://, www., or a domain that continues into a path or query.
+ * A bare name such as "nexity.in" in a sentence is not treated as a link.
+ */
 const LINK_PATTERN =
-  /(https?:\/\/|www\.|\b[a-z0-9-]+\.(com|in|net|org|io|co|me|app|ly|gg|xyz|info|link|site)\b|\.[a-z]{2,6}\/)/i;
+  /(https?:\/\/|www\.|\b[a-z0-9-]+\.(com|in|net|org|io|co|me|app|ly|gg|xyz|info|link|site)[/?#]|\.[a-z]{2,6}\/)/i;
 
 const isDuplicateKey = (err: unknown) =>
   err instanceof mongoose.mongo.MongoServerError && err.code === MONGO_DUPLICATE_KEY;
