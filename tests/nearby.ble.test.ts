@@ -100,7 +100,10 @@ describe('bluetooth nearby', () => {
     expect((await api(alice).get('/nearby/users')).body.items).toHaveLength(0);
     expect((await api(bob).get('/nearby/users')).body.items).toHaveLength(0);
 
-    await api(bob).post('/nearby/ble/sightings', { sightings: [seen(aId)] });
+    const again = await api(alice).post('/nearby/ble/sightings', { sightings: [seen(bId)] });
+    expect(again.status).toBe(202);
+    const bobReport = await api(bob).post('/nearby/ble/sightings', { sightings: [seen(aId)] });
+    expect(bobReport.status).toBe(202);
     const aroundAlice = await api(alice).get('/nearby/users');
     expect(aroundAlice.body.items).toHaveLength(1);
     expect(aroundAlice.body.items[0].user.username).toBe('bobbybt');
