@@ -173,7 +173,7 @@ describe('POST /media/uploads', () => {
       purpose: 'message',
       content_type: 'video/mp4',
       bytes: 50_000_000,
-      duration_ms: 45 * 60 * 1000,
+      duration_ms: 90_000,
     });
     expect(chatVideo.status).toBe(201);
 
@@ -253,6 +253,7 @@ describe('POST /media/uploads', () => {
       { purpose: 'reel', duration_ms: 2 * 60 * 1000 + 2000, max: 120_000, text: '2 minutes' },
       { purpose: 'story', duration_ms: 122_500, max: 120_000, text: '2 minutes' },
       { purpose: 'post', duration_ms: 150_000, max: 120_000, text: '2 minutes' },
+      { purpose: 'message', duration_ms: 45 * 60 * 1000, max: 120_000, text: '2 minutes' },
     ];
     for (const c of cases) {
       const res = await startUpload(auth, {

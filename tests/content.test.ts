@@ -156,7 +156,17 @@ describe('feed, likes, saves, comments', () => {
     expect(reply.status).toBe(201);
     const comments = await api(alice).get(`/posts/${theirs.body.id as string}/comments`);
     expect(comments.body.items[0].replies).toHaveLength(1);
-    expect((await api(bob).get(`/posts/${theirs.body.id as string}`)).body.comments_count).toBe(1);
+    expect((await api(bob).get(`/posts/${theirs.body.id as string}`)).body.comments_count).toBe(2);
+
+    expect((await api(bob).del(`/comments/${reply.body.id as string}`)).status).toBe(204);
+    expect((await api(alice).get(`/posts/${theirs.body.id as string}`)).body.comments_count).toBe(1);
+
+    const another = await api(bob).post(`/posts/${theirs.body.id as string}/comments`, {
+      body: 'Again',
+      parent_id: comment.body.id,
+    });
+    expect(another.status).toBe(201);
+    expect((await api(bob).get(`/posts/${theirs.body.id as string}`)).body.comments_count).toBe(2);
 
     expect((await api(bob).del(`/comments/${comment.body.id as string}`)).status).toBe(204);
     expect((await api(alice).get(`/posts/${theirs.body.id as string}`)).body.comments_count).toBe(0);
@@ -199,10 +209,7 @@ describe('stories and reels', () => {
     expect(created.body.liked_by_me).toBeUndefined();
     expect((await api(bob).get('/stories/tray')).body.items).toEqual([]);
     await api(bob).post(`/users/${alice.id}/follow`);
-    // Like Instagram here: only people who follow each other see each other's stories.
-    expect((await api(bob).get('/stories/tray')).body.items).toEqual([]);
-    expect((await api(bob).post(`/stories/${created.body.id as string}/view`)).status).toBe(404);
-    await api(alice).post(`/users/${bob.id}/follow`);
+    // Like Instagram: following is enough, no follow-back needed.
     const tray = await api(bob).get('/stories/tray');
     expect(tray.body.items[0].seen).toBe(false);
     const storyId = tray.body.items[0].stories[0].id as string;

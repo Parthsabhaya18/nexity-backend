@@ -227,8 +227,6 @@ describe('app journey', () => {
     });
     expect(story.status).toBe(201);
     expect(story.body.url).toContain('https://cdn.test/story/');
-    expect((await api(aarav).get('/stories/tray')).body.items).toEqual([]);
-    await api(meera).post(`/users/${aarav.id}/follow`);
     const tray = await api(aarav).get('/stories/tray');
     expect(tray.body.items[0]).toMatchObject({
       seen: false,

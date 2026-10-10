@@ -2,7 +2,6 @@ import mongoose from 'mongoose';
 
 import { ApiError } from '../../utils/ApiError';
 import { logger } from '../../utils/logger';
-import { isStaleUnverified } from '../auth/auth.service';
 import { acceptAllPending } from '../follows/follow.service';
 import { Media } from '../media/media.model';
 import { deleteMedia } from '../media/media.service';
@@ -20,7 +19,7 @@ async function claimUsername(user: UserDoc, username: string) {
   if (username === user.username) return;
   const holder = await User.findOne({ username });
   if (holder && !holder._id.equals(user._id)) {
-    if (!isStaleUnverified(holder)) throw usernameTaken();
+    if (holder.is_verified) throw usernameTaken();
     await holder.deleteOne();
   }
   user.username = username;

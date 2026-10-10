@@ -466,6 +466,22 @@ describe('reels feed order', () => {
     expect((await api(bob).get('/reels')).body.items).toEqual([]);
   });
 
+  it('shows public reels to people who follow nobody', async () => {
+    const pub = await api(alice).post('/reels', { video_media_id: await reelMedia(alice) });
+    await api(cara).patch('/users/me', { is_private: true });
+    await api(cara).post('/reels', { video_media_id: await reelMedia(cara) });
+    const feed = await api(bob).get('/reels');
+    expect(feed.body.items.map((r: { id: string }) => r.id)).toEqual([pub.body.id]);
+  });
+
+  it("refuses to delete a reel's video file while the reel uses it", async () => {
+    const mediaId = await reelMedia(alice);
+    await api(alice).post('/reels', { video_media_id: mediaId });
+    const res = await api(alice).del(`/media/${mediaId}`);
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('MEDIA_IN_USE');
+  });
+
   it("leaves the viewer's own reels out of the feed but keeps them on their profile", async () => {
     const own = await api(alice).post('/reels', { video_media_id: await reelMedia(alice) });
     expect((await api(alice).get('/reels')).body.items).toEqual([]);

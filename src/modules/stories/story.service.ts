@@ -221,38 +221,20 @@ export async function createSharedStory(
   return storyMedia(story);
 }
 
-/** People who follow the viewer and whom the viewer follows back (both accepted). */
-async function mutualIds(viewerId: mongoose.Types.ObjectId) {
+/** Accounts the viewer follows (accepted), like Instagram. */
+async function followingIds(viewerId: mongoose.Types.ObjectId) {
   const following = await Follow.find({ follower_id: viewerId, status: 'accepted' })
     .select('following_id')
     .lean();
-  const back = await Follow.find({
-    follower_id: { $in: following.map((f) => f.following_id) },
-    following_id: viewerId,
-    status: 'accepted',
-  })
-    .select('follower_id')
-    .lean();
-  return back.map((f) => f.follower_id);
-}
-
-async function isMutual(a: mongoose.Types.ObjectId, b: mongoose.Types.ObjectId) {
-  const n = await Follow.countDocuments({
-    status: 'accepted',
-    $or: [
-      { follower_id: a, following_id: b },
-      { follower_id: b, following_id: a },
-    ],
-  });
-  return n === 2;
+  return following.map((f) => f.following_id);
 }
 
 /**
- * Your story first, then people you and they both follow. Someone you follow
- * who doesn't follow you back is left out. `seen` is false while any item is unseen.
+ * Your story first, then everyone you follow. A private account only appears
+ * once it accepted your follow. `seen` is false while any item is unseen.
  */
 export async function storyTray(viewer: UserDoc) {
-  const authorIds = await audienceIds(viewer._id, await mutualIds(viewer._id));
+  const authorIds = await audienceIds(viewer._id, await followingIds(viewer._id));
   const stories = await Story.find({
     author_id: { $in: authorIds },
     expires_at: { $gt: new Date() },
@@ -415,9 +397,6 @@ async function visibleStory(viewer: UserDoc, storyId: string) {
   }
   if (!(await canViewContent(viewer, author))) {
     throw ApiError.forbidden('This account is private.', 'PRIVATE_ACCOUNT');
-  }
-  if (!(await isMutual(viewer._id, author._id))) {
-    throw ApiError.notFound('This story is no longer available.');
   }
   return story;
 }

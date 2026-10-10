@@ -98,6 +98,27 @@ describe('register + email OTP', () => {
     expect(me.body).not.toHaveProperty('password_hash');
   });
 
+  it('frees a username that was only reserved by an unfinished sign-up', async () => {
+    await request(app).post('/api/v1/auth/register').send(signup);
+
+    const avail = await request(app)
+      .get('/api/v1/auth/username-available')
+      .query({ username: 'riya.writes' });
+    expect(avail.body).toEqual({ available: true });
+
+    const sameEmail = await request(app).post('/api/v1/auth/register').send(signup);
+    expect(sameEmail.status).toBe(201);
+    expect(await User.countDocuments({ email: 'riya@example.com' })).toBe(1);
+
+    const taken = await request(app)
+      .post('/api/v1/auth/register')
+      .send({ ...signup, email: 'other@example.com' });
+    expect(taken.status).toBe(201);
+    expect(taken.body.user.username).toBe('riya.writes');
+    expect(await User.countDocuments({ username: 'riya.writes' })).toBe(1);
+    expect(await User.exists({ email: 'riya@example.com' })).toBeNull();
+  });
+
   it('blocks a taken email and username once verified', async () => {
     await registerAndVerify();
     const email = await request(app)

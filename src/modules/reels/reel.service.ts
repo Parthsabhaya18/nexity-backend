@@ -6,7 +6,7 @@ import { ApiError } from '../../utils/ApiError';
 import { FEED_CURSOR } from '../posts/post.schema';
 import { canViewContent, findVisibleUser, toUserSummaries } from '../follows/follow.service';
 import { notifyComment } from '../notifications/notification.service';
-import { audienceIds, isBlockedEither } from '../safety/block.service';
+import { audienceIds, blockIdsFor, isBlockedEither } from '../safety/block.service';
 import { Follow } from '../follows/follow.model';
 import { Media } from '../media/media.model';
 import { viewUrl } from '../media/media.storage';
@@ -176,33 +176,82 @@ export async function createReel(
 
 /** How many of the newest eligible reels the feed shuffles. */
 const FEED_POOL = 500;
+const FEED_BATCH = 200;
+
+/**
+ * Newest reels from public accounts and private accounts the viewer follows.
+ * The viewer's own reels and blocked people are left out. Only authors of the
+ * scanned reels are looked up, never every public account.
+ */
+async function newestEligibleReels(viewer: UserDoc) {
+  const follows = await Follow.find({ follower_id: viewer._id, status: 'accepted' })
+    .select('following_id')
+    .lean();
+  const audience = await audienceIds(viewer._id, follows.map((f) => f.following_id));
+  const followed = new Set(audience.map((id) => id.toHexString()));
+  followed.delete(viewer._id.toHexString());
+  const blocked = await blockIdsFor(viewer._id);
+  const excluded = [viewer._id, ...blocked];
+
+  const authorOk = new Map<string, boolean>();
+  const selected: { _id: mongoose.Types.ObjectId }[] = [];
+  let before: mongoose.Types.ObjectId | undefined;
+
+  while (selected.length < FEED_POOL) {
+    const filter: Record<string, unknown> = { deleted_at: null, author_id: { $nin: excluded } };
+    if (before) filter._id = { $lt: before };
+    const batch = await Reel.find(filter)
+      .sort({ _id: -1 })
+      .limit(FEED_BATCH)
+      .select('_id author_id')
+      .lean();
+    if (!batch.length) break;
+
+    const unknown = [
+      ...new Set(
+        batch
+          .map((reel) => reel.author_id.toHexString())
+          .filter((id) => !followed.has(id) && !authorOk.has(id)),
+      ),
+    ];
+    if (unknown.length) {
+      const users = await User.find({ _id: { $in: unknown } })
+        .select('is_private status')
+        .lean();
+      const found = new Map(users.map((user) => [user._id.toHexString(), user]));
+      for (const id of unknown) {
+        const user = found.get(id);
+        authorOk.set(id, Boolean(user && user.status === 'active' && !user.is_private));
+      }
+    }
+
+    for (const reel of batch) {
+      const authorId = reel.author_id.toHexString();
+      if (followed.has(authorId) || authorOk.get(authorId)) {
+        selected.push({ _id: reel._id });
+        if (selected.length >= FEED_POOL) break;
+      }
+    }
+    before = batch[batch.length - 1]!._id;
+    if (batch.length < FEED_BATCH) break;
+  }
+  return selected;
+}
 
 const shuffleKey = (seed: string, id: string) =>
   createHash('sha1').update(seed + id).digest('hex').slice(0, 16);
 
 /**
- * Reels in random order, like the home feed. Each reel gets a stable key from
- * the seed, so paging never repeats one; a fresh load picks a new order.
+ * Reels in random order, like the home feed: public accounts plus private
+ * accounts the viewer follows. Each reel gets a stable key from the seed, so
+ * paging never repeats one; a fresh load picks a new order.
  */
 export async function reelFeed(viewer: UserDoc, cursor: string | undefined, limit: number) {
   const take = pageOf(limit);
   const match = cursor ? FEED_CURSOR.exec(cursor) : null;
   let seed = match?.[1] ?? randomBytes(4).toString('hex');
   let after = match?.[2] ?? '';
-  const follows = await Follow.find({ follower_id: viewer._id, status: 'accepted' })
-    .select('following_id')
-    .lean();
-  const pool = await Reel.find({
-    author_id: {
-      $in: await audienceIds(viewer._id, follows.map((f) => f.following_id)),
-      $ne: viewer._id,
-    },
-    deleted_at: null,
-  })
-    .sort({ _id: -1 })
-    .limit(FEED_POOL)
-    .select('_id')
-    .lean();
+  const pool = await newestEligibleReels(viewer);
   const shuffled = (s: string) =>
     pool
       .map((r) => ({ id: r._id, key: shuffleKey(s, r._id.toHexString()) }))
