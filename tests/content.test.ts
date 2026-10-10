@@ -60,6 +60,7 @@ const api = (a: Account) => ({
     request(app).post(`/api/v1${path}`).set('Authorization', a.auth).send(body ?? {}),
   patch: (path: string, body: object) =>
     request(app).patch(`/api/v1${path}`).set('Authorization', a.auth).send(body),
+  put: (path: string) => request(app).put(`/api/v1${path}`).set('Authorization', a.auth),
   del: (path: string) => request(app).delete(`/api/v1${path}`).set('Authorization', a.auth),
 });
 
@@ -134,10 +135,10 @@ describe('feed, likes, saves, comments', () => {
 
     await api(alice).post(`/users/${bob.id}/follow`);
 
-    const liked = await api(alice).post(`/posts/${theirs.body.id as string}/like`);
+    const liked = await api(alice).put(`/posts/${theirs.body.id as string}/like`);
     expect(liked.body).toMatchObject({ liked: true, likes_count: 1 });
     expect(liked.body.post.liked_by_me).toBe(true);
-    const unliked = await api(alice).post(`/posts/${theirs.body.id as string}/like`);
+    const unliked = await api(alice).del(`/posts/${theirs.body.id as string}/like`);
     expect(unliked.body).toMatchObject({ liked: false, likes_count: 0 });
 
     const saved = await api(alice).post(`/posts/${theirs.body.id as string}/save`);

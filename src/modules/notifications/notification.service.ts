@@ -1,6 +1,7 @@
 import { type Types } from 'mongoose';
 
 import { ApiError } from '../../utils/ApiError';
+import { Conversation } from '../messages/conversation.model';
 import {
   avatarUrlOf,
   type NotificationSettingKey,
@@ -142,12 +143,20 @@ export async function listNotifications(
 }
 
 export async function unreadCount(viewer: UserDoc) {
-  const notifications = await Notification.countDocuments({
-    recipient_id: viewer._id,
-    read_at: null,
-    ...delivered(),
-  });
-  return { notifications, messages: 0 };
+  const [notifications, messageRows] = await Promise.all([
+    Notification.countDocuments({
+      recipient_id: viewer._id,
+      read_at: null,
+      ...delivered(),
+    }),
+    Conversation.aggregate<{ total: number }>([
+      { $match: { participant_ids: viewer._id } },
+      { $unwind: '$members' },
+      { $match: { 'members.user_id': viewer._id, 'members.hidden': { $ne: true } } },
+      { $group: { _id: null, total: { $sum: '$members.unread_count' } } },
+    ]),
+  ]);
+  return { notifications, messages: messageRows[0]?.total ?? 0 };
 }
 
 export async function markRead(viewer: UserDoc, id: string) {

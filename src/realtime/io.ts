@@ -3,7 +3,10 @@ import type { Server as HttpServer } from 'node:http';
 import { isValidObjectId } from 'mongoose';
 import { type DefaultEventsMap, Server, type Socket } from 'socket.io';
 
+import { createAdapter } from '@socket.io/redis-adapter';
+
 import { env } from '../config/env';
+import { redisClient } from '../config/redis';
 import { authenticateAccessToken } from '../middlewares/requireAuth';
 import { sharesActivity, User } from '../modules/users/user.model';
 import { ApiError } from '../utils/ApiError';
@@ -147,6 +150,17 @@ export function attachRealtime(server: HttpServer, onConnection: (socket: ChatSo
     pingInterval: 25_000,
     pingTimeout: 20_000,
   });
+
+  const pub = redisClient();
+  if (pub) {
+    const sub = pub.duplicate();
+    void sub.connect().then(() => {
+      io?.adapter(createAdapter(pub, sub));
+      logger.info('Socket.IO Redis adapter enabled');
+    });
+  } else {
+    logger.info('Socket.IO is in-process. Set REDIS_URL before running more than one server.');
+  }
 
   io.use((socket, next) => void authenticate(socket as ChatSocket, next));
 

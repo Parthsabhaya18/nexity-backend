@@ -16,8 +16,8 @@ import { Comment, PostSave } from '../posts/post.engage.model';
 import { commentDto, presentPosts } from '../posts/post.extra';
 import { Post } from '../posts/post.model';
 import { Reel, ReelLike, ReelSave, type ReelDoc } from './reel.model';
+import { MONGO_DUPLICATE_KEY } from '../../utils/mongo';
 
-const MONGO_DUPLICATE_KEY = 11000;
 const pageOf = (limit: number) => Math.min(50, Math.max(1, limit || 20));
 
 async function toReelDto(

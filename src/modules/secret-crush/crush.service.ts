@@ -12,6 +12,7 @@ import { Block } from '../safety/block.model';
 import { isBlockedEither } from '../safety/block.service';
 import { SecretBlock } from '../secret-messages/secret.models';
 import { dayStartsAt, entitlementOf, planRequired } from '../subscriptions/entitlement.service';
+import { MONGO_DUPLICATE_KEY } from '../../utils/mongo';
 import {
   PUBLIC_USER_FIELDS,
   type PublicUserSource,
@@ -28,7 +29,6 @@ import {
   type CrushMatchAttrs,
 } from './crush.models';
 
-const MONGO_DUPLICATE_KEY = 11000;
 const HOUR_MS = 3_600_000;
 const COOLDOWN_MS = 24 * HOUR_MS;
 const NOTICE_GAP_MS = 30 * 24 * HOUR_MS;

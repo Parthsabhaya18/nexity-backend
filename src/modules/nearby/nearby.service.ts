@@ -10,8 +10,8 @@ import { cellsAround, geohash, haversineMeters, roundCoord } from './nearby.geo'
 import { dropBluetooth } from './nearby.ble';
 import { type LocationPingAttrs, NearbyLocationPing, NearbyNotification } from './nearby.models';
 import { isValidTimezone, localDayStart } from './nearby.time';
+import { MONGO_DUPLICATE_KEY } from '../../utils/mongo';
 
-const MONGO_DUPLICATE_KEY = 11000;
 const PING_TTL_MS = 15 * 60_000;
 const MIN_PING_GAP_MS = 55_000;
 const MAX_FUTURE_SKEW_MS = 60_000;

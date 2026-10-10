@@ -10,6 +10,7 @@ import { Story } from '../stories/story.model';
 import { SupportTicket } from '../support/supportTicket.model';
 import { User, type UserDoc } from '../users/user.model';
 import { Media, type MediaDoc } from './media.model';
+import { MONGO_DUPLICATE_KEY } from '../../utils/mongo';
 import {
   CONTENT_TYPES,
   DURATION_TOLERANCE_MS,
@@ -165,7 +166,6 @@ export async function createUpload(user: UserDoc, input: CreateUploadInput) {
   }
 }
 
-const MONGO_DUPLICATE_KEY = 11000;
 
 function multipartTicket(media: MediaDoc) {
   return {

@@ -8,10 +8,10 @@ import { isMuted } from '../safety/mute.service';
 import { avatarUrlOf, sharesActivity, User, type UserDoc } from '../users/user.model';
 import { Follow } from './follow.model';
 import type { ConnectionsQuery, PageQuery } from './follow.schema';
+import { MONGO_DUPLICATE_KEY } from '../../utils/mongo';
 
 export type FollowStatus = 'none' | 'pending' | 'accepted';
 
-const MONGO_DUPLICATE_KEY = 11000;
 
 const userNotFound = () => ApiError.notFound('User not found');
 

@@ -34,10 +34,6 @@ export const deletePost: RequestHandler = async (req, res) => {
   res.status(204).end();
 };
 
-export const likePost: RequestHandler = async (req, res) => {
-  res.json(await extra.toggleLike(req.user!, idOf(req)));
-};
-
 export const likePostOn: RequestHandler = async (req, res) => {
   res.json(await extra.setLike(req.user!, idOf(req), true));
 };

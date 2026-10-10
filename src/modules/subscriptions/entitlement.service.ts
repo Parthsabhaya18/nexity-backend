@@ -4,8 +4,8 @@ import { ApiError } from '../../utils/ApiError';
 import type { PlanId, UserDoc } from '../users/user.model';
 import { type Plan, PLANS } from './plans';
 import { SecretUsage } from './usage.model';
+import { MONGO_DUPLICATE_KEY } from '../../utils/mongo';
 
-const MONGO_DUPLICATE_KEY = 11000;
 /** Usage months and fair-use days follow India time (UTC+05:30, no DST). */
 const IST_OFFSET_MS = 330 * 60_000;
 

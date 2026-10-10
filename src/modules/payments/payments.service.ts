@@ -12,6 +12,7 @@ import { syncCrushes } from '../secret-crush/crush.service';
 import { entitlementOf, subscriptionDto } from '../subscriptions/entitlement.service';
 import { type Period, PERIOD_MONTHS, periodMs, PLANS } from '../subscriptions/plans';
 import { type PlanId, User, type UserDoc } from '../users/user.model';
+import { MONGO_DUPLICATE_KEY } from '../../utils/mongo';
 import {
   type CheckoutDoc,
   CouponRedemption,
@@ -37,7 +38,6 @@ import {
   webhookSecret,
 } from './razorpay.gateway';
 
-const MONGO_DUPLICATE_KEY = 11000;
 const CHECKOUT_TTL_MS = 15 * 60_000;
 const PENDING_GIVE_UP_MS = 30 * 60_000;
 const GRACE_MS = 3 * 86_400_000;
@@ -96,28 +96,30 @@ export function paymentsInfo() {
 }
 
 export function catalog() {
-  return (Object.values(PLANS))
-    .filter((p) => p.active)
+  return Object.values(PLANS)
+    .filter((plan) => plan.active)
     .sort((a, b) => a.rank - b.rank)
-    .map((p) => {
-    const pricing = Object.fromEntries(
-      (['monthly', 'quarterly', 'yearly'] as const).map((period) => {
-        const amount = p.pricing[period];
-        const months = PERIOD_MONTHS[period];
-        const full = p.pricing.monthly * months;
-        return [
-          period,
-          {
-            amount_paise: amount,
-            months,
-            per_month_paise: Math.floor(amount / months),
-            save_pct: full > 0 ? Math.round((1 - amount / full) * 100) : 0,
-          },
-        ];
-      }),
-    );
-    return { ...p, pricing, mrp_paise: p.mrp_inr * 100 };
-  });
+    .map((plan) => {
+      const { price_inr, ...rest } = plan;
+      void price_inr;
+      const pricing = Object.fromEntries(
+        (['monthly', 'quarterly', 'yearly'] as const).map((period) => {
+          const amount = plan.pricing[period];
+          const months = PERIOD_MONTHS[period];
+          const full = plan.pricing.monthly * months;
+          return [
+            period,
+            {
+              amount_paise: amount,
+              months,
+              per_month_paise: Math.floor(amount / months),
+              save_pct: full > 0 ? Math.round((1 - amount / full) * 100) : 0,
+            },
+          ];
+        }),
+      );
+      return { ...rest, pricing, mrp_paise: plan.mrp_inr * 100 };
+    });
 }
 
 /* ---------- Quote & checkout ---------- */
@@ -881,7 +883,6 @@ async function renew(sub: RzpSubscription, p: RzpPayment) {
   user.set('entitlement.updated_at', now);
   await user.save();
   await Payment.updateOne({ razorpay_payment_id: p.id }, { $set: { period_start: start, period_end: end } });
-  await syncCrushes(user);
   await notify(
     user._id,
     'payment_renewed',

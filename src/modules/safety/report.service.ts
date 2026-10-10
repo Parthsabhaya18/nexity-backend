@@ -3,8 +3,8 @@ import mongoose from 'mongoose';
 import { ApiError } from '../../utils/ApiError';
 import type { UserDoc } from '../users/user.model';
 import { REPORT_REASONS, REPORT_TARGETS, Report } from './report.model';
+import { MONGO_DUPLICATE_KEY } from '../../utils/mongo';
 
-const MONGO_DUPLICATE_KEY = 11000;
 
 export async function createReport(
   reporter: UserDoc,

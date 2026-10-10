@@ -2,6 +2,7 @@ import { createServer, type Server } from 'node:http';
 
 import { createApp } from './app';
 import { connectDatabase, disconnectDatabase } from './config/database';
+import { connectRedis, disconnectRedis } from './config/redis';
 import { env, isMediaConfigured, paymentsMode } from './config/env';
 import { startMediaCleanup, stopMediaCleanup } from './modules/media/media.cleanup';
 import { registerChatHandlers } from './modules/messages/messages.socket';
@@ -18,6 +19,7 @@ let shuttingDown = false;
 
 async function start() {
   await connectDatabase();
+  await connectRedis();
   await refreshPlans(true);
 
   server = createServer(createApp());
@@ -60,6 +62,7 @@ async function shutdown(signal: string, exitCode = 0) {
       );
     }
     await disconnectDatabase();
+    await disconnectRedis();
   } catch (err) {
     logger.error({ err }, 'Error during shutdown');
     exitCode = 1;

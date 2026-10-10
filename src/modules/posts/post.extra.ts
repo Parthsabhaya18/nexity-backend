@@ -87,10 +87,13 @@ async function newestEligiblePosts(
   followedIds: Types.ObjectId[],
   hidden: Types.ObjectId[],
 ) {
-  const allowed = new Set<string>([
-    viewerId.toHexString(),
-    ...followedIds.map((id) => id.toHexString()),
-  ]);
+  const roster = await User.find({
+    _id: { $in: [viewerId, ...followedIds] },
+    status: 'active',
+  })
+    .select('_id')
+    .lean();
+  const allowed = new Set(roster.map((user) => user._id.toHexString()));
   const authorOk = new Map<string, boolean>();
   const selected: { _id: Types.ObjectId }[] = [];
   let before: Types.ObjectId | undefined;
@@ -274,10 +277,6 @@ export async function setLike(viewer: UserDoc, postId: string, want: boolean) {
   return { liked: dto.liked_by_me, likes_count: dto.likes_count, post: dto };
 }
 
-export async function toggleLike(viewer: UserDoc, postId: string) {
-  const liked = await PostLike.exists({ user_id: viewer._id, post_id: postId });
-  return setLike(viewer, postId, !liked);
-}
 export async function toggleSave(viewer: UserDoc, postId: string) {
   const { post, author } = await visiblePost(viewer, postId);
   const existing = await PostSave.findOneAndDelete({ user_id: viewer._id, post_id: post._id });

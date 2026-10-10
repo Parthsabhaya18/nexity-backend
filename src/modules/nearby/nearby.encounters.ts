@@ -6,8 +6,8 @@ import { SecretBlock } from '../secret-messages/secret.models';
 import { User } from '../users/user.model';
 import { Encounter } from './nearby.models';
 import { nextLocalMidnight } from './nearby.time';
+import { MONGO_DUPLICATE_KEY } from '../../utils/mongo';
 
-const MONGO_DUPLICATE_KEY = 11000;
 const DAY_MS = 86_400_000;
 
 export type EncounterSource = 'ble' | 'location';

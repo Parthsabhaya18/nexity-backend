@@ -9,6 +9,7 @@ import { toUserSummaries } from '../follows/follow.service';
 import { User, type UserDoc } from '../users/user.model';
 import { blockedEither, pairKeyOf, recordEncounter } from './nearby.encounters';
 import { NearbyBleSighting, NearbyBleToken, NearbyPresence } from './nearby.models';
+import { MONGO_DUPLICATE_KEY } from '../../utils/mongo';
 
 const TOKEN_MS = 15 * 60_000;
 const BATCH = 8;
@@ -17,7 +18,6 @@ const MAX_ISSUED_PER_WINDOW = 30;
 const SKEW_MS = 2 * 60_000;
 const PRESENCE_MS = 300_000;
 const MAX_SIGHTING_AGE_MS = 10 * 60_000;
-const MONGO_DUPLICATE_KEY = 11000;
 
 const hashOf = (ephId: string) => createHash('sha256').update(ephId).digest('hex');
 

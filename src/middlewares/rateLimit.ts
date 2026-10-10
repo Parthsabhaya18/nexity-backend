@@ -1,14 +1,30 @@
 import type { Request } from 'express';
 import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
+import { RedisStore } from 'rate-limit-redis';
 
 import { env } from '../config/env';
+import { redisClient } from '../config/redis';
 
 const FIFTEEN_MINUTES = 15 * 60 * 1000;
+
+let storeCount = 0;
+
+/** One store per limiter so their counters never share a Redis key. */
+function redisStore() {
+  const client = redisClient();
+  if (!client) return undefined;
+  storeCount += 1;
+  return new RedisStore({
+    prefix: `rl:${storeCount}:`,
+    sendCommand: (...args: string[]) => client.sendCommand(args),
+  });
+}
 
 function limiter(limit: number, key: (req: Request) => string) {
   return rateLimit({
     windowMs: FIFTEEN_MINUTES,
     limit,
+    store: redisStore(),
     standardHeaders: 'draft-8',
     legacyHeaders: false,
     skip: () => env.NODE_ENV === 'test',

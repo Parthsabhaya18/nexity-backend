@@ -11,9 +11,10 @@ import { OtpCode, type OtpPurpose } from './otpCode.model';
 export const OTP_LENGTH = 6;
 export const OTP_TTL_MINUTES = 10;
 export const RESEND_COOLDOWN_SECONDS = 30;
-const MAX_SENDS_PER_HOUR = 5;
+/** Per account, whichever address is used to ask. Stops resend spam from many IPs. */
+const MAX_SENDS_PER_WINDOW = 3;
+const SEND_WINDOW_MS = 15 * 60 * 1000;
 const MAX_VERIFY_ATTEMPTS = 5;
-const HOUR_MS = 60 * 60 * 1000;
 
 const hashCode = (userId: string, purpose: OtpPurpose, code: string) =>
   createHmac('sha256', jwtAccessSecret).update(`${userId}:${purpose}:${code}`).digest('hex');
@@ -46,10 +47,10 @@ export async function sendOtp(
         'RESEND_COOLDOWN',
       );
     }
-    const windowOpen = now - existing.window_started_at.getTime() < HOUR_MS;
-    if (windowOpen && existing.sends_in_window >= MAX_SENDS_PER_HOUR) {
+    const windowOpen = now - existing.window_started_at.getTime() < SEND_WINDOW_MS;
+    if (windowOpen && existing.sends_in_window >= MAX_SENDS_PER_WINDOW) {
       throw ApiError.tooMany(
-        'Too many codes requested. Please try again in an hour.',
+        'Too many codes requested. Please try again in 15 minutes.',
         undefined,
         'TOO_MANY_CODES',
       );
@@ -59,7 +60,7 @@ export async function sendOtp(
   const code = randomInt(0, 10 ** OTP_LENGTH)
     .toString()
     .padStart(OTP_LENGTH, '0');
-  const windowOpen = existing && now - existing.window_started_at.getTime() < HOUR_MS;
+  const windowOpen = existing && now - existing.window_started_at.getTime() < SEND_WINDOW_MS;
 
   await OtpCode.findOneAndUpdate(
     { user_id: user._id, purpose },

@@ -1,7 +1,7 @@
 import type { RequestHandler } from 'express';
 import { z } from 'zod';
 
-import { userIdParamsSchema } from '../follows/follow.schema';
+import { pageQuerySchema, userIdParamsSchema } from '../follows/follow.schema';
 import { blockUser, listBlocked, unblockUser } from './block.service';
 import { muteUser, unmuteUser } from './mute.service';
 import { REPORT_REASONS, REPORT_TARGETS } from './report.model';
@@ -37,7 +37,7 @@ export const unmute: RequestHandler = async (req, res) => {
 };
 
 export const blocked: RequestHandler = async (req, res) => {
-  res.json(await listBlocked(req.user!));
+  res.json(await listBlocked(req.user!, pageQuerySchema.parse(req.query)));
 };
 
 export const report: RequestHandler = async (req, res) => {

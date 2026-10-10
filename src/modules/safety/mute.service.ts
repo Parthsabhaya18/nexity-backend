@@ -3,8 +3,8 @@ import mongoose, { type Types } from 'mongoose';
 import { ApiError } from '../../utils/ApiError';
 import { User, type UserDoc } from '../users/user.model';
 import { Mute } from './mute.model';
+import { MONGO_DUPLICATE_KEY } from '../../utils/mongo';
 
-const MONGO_DUPLICATE_KEY = 11000;
 
 export async function muteUser(viewer: UserDoc, targetId: string) {
   if (viewer._id.equals(targetId)) {
