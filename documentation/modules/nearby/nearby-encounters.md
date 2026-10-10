@@ -270,14 +270,14 @@ Duplicate advertisements (same person, several EphIDs, several reports) collapse
 | Situation | Behaviour |
 |---|---|
 | Bluetooth off / permission denied / blocked | States above; nothing advertised; server presence expires |
-| App backgrounded | **Phase 1:** advertising and scanning stop on `AppState` `background`; presence expires after 5 min |
-| App killed | Nothing runs. No claim otherwise |
+| App backgrounded or swiped away | Android keeps a connected-device foreground service so advertising and scanning continue. iOS uses Bluetooth background modes until the app is force-quit. Presence stays while both phones are still heard |
+| App force-stopped | The system ends Bluetooth. Turning Nearby on again starts it |
 | Android battery saver / OEM killers | Scans may return nothing; we never show "nobody nearby" as a fact while a session is degraded — show `empty` only after a full, healthy session |
 | Android scan throttling (> 5 starts / 30 s → silent failure) | Bounded sessions ([§15](#15-performance-and-battery)); never restart scans in a tight loop |
 | iOS background | Advertising moves service UUIDs to the "overflow area": iOS ↔ iOS discovery in background is unreliable and Android can't see it. iOS background BLE is **out of scope until tested** |
 | Device can't advertise | `unsupported` state; scanning alone never verifies anyone |
 
-Background BLE (Android foreground service `connectedDevice`) is Phase 9 and needs a battery study first.
+Nearby Bluetooth keeps running from an Android foreground service (`connectedDevice`) and from iOS Bluetooth background modes, until the user turns Nearby off or force-stops the app.
 
 ---
 
