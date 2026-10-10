@@ -80,7 +80,7 @@ Limits are **server data**, editable by admins, never hard-coded in the app. `-1
 | `plus` | 1 | 5 | 3 | true | true | false |
 | `premium` | 2 | -1 | 10 | true | true | true |
 
-Seeded by `backend/src/modules/subscriptions/plans.seed.ts` on startup when missing.
+Seeded into the `plans` collection on startup when a plan is missing (`refreshPlans` in `plans.ts`). After that the database is the source of truth: prices, features, limits, icons and the paywall copy (`plan_page`, returned as `page` on `GET /plans`) are read from MongoDB. Editing a document takes effect within 30 seconds; the app does not hard-code plan text.
 
 ### 1.4 Usage counting
 
@@ -97,7 +97,7 @@ Seeded by `backend/src/modules/subscriptions/plans.seed.ts` on startup when miss
 |---|---|---|
 | **Android** | **Razorpay** — UPI apps (Google Pay, PhonePe, Paytm, BHIM), UPI ID, QR, cards, net banking, wallets, **AutoPay** — offered through Google's User Choice Billing next to Google Play Billing | [razorpay-payments.md](razorpay-payments.md) |
 | **Web** (`nexity.com/premium`) | **Razorpay** (all methods) | [razorpay-payments.md](razorpay-payments.md) |
-| **iOS** | Apple In-App Purchase (StoreKit 2) — required by App Store Guideline 3.1.1; Razorpay is never shown on iOS | This section |
+| **iOS** | **Razorpay** — the same checkout as Android (UPI apps, UPI ID, QR, cards, net banking, wallets, AutoPay) | [razorpay-payments.md](razorpay-payments.md) |
 
 All providers write to the same `subscriptions` collection, so **one plan works on every device** of the account: a plan bought with Razorpay on Android also unlocks the iPhone app, and the other way round. Only one paid subscription can be active per account (`409 ALREADY_ON_PLAN` from the other provider's checkout).
 
@@ -184,7 +184,7 @@ UI (top to bottom):
 7. Footer links: **Restore purchases**, **Redeem a code**, Terms, Privacy. These are required by both stores.
 8. Legal fine print: auto-renew terms ("Renews automatically at ₹99/month until cancelled. Cancel at least 24 hours before renewal in your App Store / Google Play settings.").
 
-**Purchase flow:** on **Android and web**, the plan button opens `Checkout { planId }` (Razorpay — [razorpay-payments.md §3](razorpay-payments.md#3-user-flow-frontend)); on Android a "Pay with Google Play" option is shown next to it. On **iOS** the flow below (StoreKit) is used:
+**Purchase flow:** on **Android and iOS**, the plan button opens `Checkout { planId }` (Razorpay — [razorpay-payments.md §3](razorpay-payments.md#3-user-flow-frontend)). The StoreKit flow below is not wired up.
 
 ```
 Tap "Get Premium"

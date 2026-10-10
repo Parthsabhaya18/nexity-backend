@@ -20,6 +20,7 @@
     "test:watch": "vitest",
     "media:check": "tsx scripts/check-media.ts",
     "seed": "tsx scripts/seed.ts",
+    "seed:users": "tsx scripts/seed-test-users.ts",
     "seed:stories": "tsx scripts/seed-stories.ts"
   },
   "dependencies": {

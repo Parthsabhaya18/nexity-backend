@@ -2,9 +2,44 @@ import { type Types } from 'mongoose';
 
 import { ApiError } from '../../utils/ApiError';
 import { avatarUrlOf, User, type UserDoc } from '../users/user.model';
-import { Notification } from './notification.model';
+import { Notification, type NotificationType } from './notification.model';
 
 const pageOf = (limit: number) => Math.min(50, Math.max(1, limit || 20));
+
+/** Delayed rows stay hidden until `deliver_at`. */
+const delivered = (now = new Date()) => ({
+  $or: [{ deliver_at: null }, { deliver_at: { $lte: now } }],
+});
+
+const ANONYMOUS: ReadonlySet<NotificationType> = new Set([
+  'secret_message_received',
+  'secret_message_followup',
+  'nearby_encounter',
+  'crush_added',
+]);
+
+/** In-app notice with no actor. Anonymous types never carry the sender's id, name or text. */
+export async function notifySystem(opts: {
+  recipientId: Types.ObjectId;
+  type: NotificationType;
+  text: string;
+  actorId?: Types.ObjectId | null;
+  secretThreadId?: string | null;
+  crushMatchId?: string | null;
+  conversationId?: Types.ObjectId | null;
+  deliverAt?: Date | null;
+}) {
+  return Notification.create({
+    recipient_id: opts.recipientId,
+    actor_id: opts.actorId ?? null,
+    type: opts.type,
+    text: opts.text,
+    secret_thread_id: opts.secretThreadId ?? null,
+    crush_match_id: opts.crushMatchId ?? null,
+    conversation_id: opts.conversationId ?? null,
+    deliver_at: opts.deliverAt ?? null,
+  });
+}
 
 function snippet(body: string) {
   return body.replace(/\s+/g, ' ').trim().slice(0, 80);
@@ -45,25 +80,32 @@ export async function listNotifications(
   limit: number,
 ) {
   const take = pageOf(limit);
-  const filter: Record<string, unknown> = { recipient_id: viewer._id };
+  const filter: Record<string, unknown> = { recipient_id: viewer._id, ...delivered() };
   if (cursor) filter._id = { $lt: cursor };
   const rows = await Notification.find(filter)
     .sort({ _id: -1 })
     .limit(take + 1);
   const page = rows.slice(0, take);
-  const actors = await User.find({ _id: { $in: page.map((n) => n.actor_id) } });
+  const actorIds = page.flatMap((n) => (n.actor_id ? [n.actor_id] : []));
+  const actors = actorIds.length ? await User.find({ _id: { $in: actorIds } }) : [];
   const byId = new Map(actors.map((u) => [u.id as string, u]));
   const items = await Promise.all(
     page.map(async (n) => {
-      const actor = byId.get(n.actor_id.toHexString());
+      const anonymous = ANONYMOUS.has(n.type);
+      const actor = !anonymous && n.actor_id ? byId.get(n.actor_id.toHexString()) : undefined;
+      const shownAt = n.deliver_at ?? (n.get('created_at') as Date);
       return {
         id: n.id as string,
         type: n.type,
         text: n.text,
         post_id: n.post_id ? n.post_id.toHexString() : null,
         reel_id: n.reel_id ? n.reel_id.toHexString() : null,
+        secret_thread_id: n.secret_thread_id ?? null,
+        crush_match_id: n.crush_match_id ?? null,
+        conversation_id: n.conversation_id ? n.conversation_id.toHexString() : null,
+        anonymous,
         read: n.read_at != null,
-        created_at: (n.get('created_at') as Date).toISOString(),
+        created_at: shownAt.toISOString(),
         actor: actor
           ? {
               id: actor.id as string,
@@ -85,6 +127,7 @@ export async function unreadCount(viewer: UserDoc) {
   const notifications = await Notification.countDocuments({
     recipient_id: viewer._id,
     read_at: null,
+    ...delivered(),
   });
   return { notifications, messages: 0 };
 }

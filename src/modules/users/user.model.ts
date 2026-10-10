@@ -3,6 +3,9 @@ import mongoose, { type HydratedDocument, type InferSchemaType } from 'mongoose'
 import { Follow } from '../follows/follow.model';
 import { viewUrl } from '../media/media.storage';
 
+export const PLAN_IDS = ['free', 'plus', 'premium'] as const;
+export type PlanId = (typeof PLAN_IDS)[number];
+
 /** Sign-up offers man / woman / other; the rest stay valid for existing accounts. */
 export const GENDERS = ['woman', 'man', 'other', 'non_binary', 'prefer_not_to_say'] as const;
 
@@ -59,6 +62,42 @@ const userSchema = new mongoose.Schema(
     password_changed_at: { type: Date, default: () => new Date() },
     /** Set when the user's last chat socket disconnects; powers "Active 5m ago". */
     last_active_at: { type: Date, default: null },
+    /** Denormalised current plan. Treated as Free once `expires_at` has passed. */
+    entitlement: {
+      plan: { type: String, enum: PLAN_IDS, default: 'free' },
+      expires_at: { type: Date, default: null },
+      source: { type: String, default: null },
+      updated_at: { type: Date, default: null },
+      /** Razorpay billing for the current plan; only the payments service writes these. */
+      period: { type: String, enum: ['monthly', 'quarterly', 'yearly', null], default: null },
+      autopay: { type: Boolean, default: false },
+      razorpay_subscription_id: { type: String, default: null },
+      /** Full price of one period (what AutoPay renews at, and what an upgrade credit is based on). */
+      price_paise: { type: Number, default: null },
+      /** What was paid for the current period (after coupons / credits). */
+      paid_paise: { type: Number, default: null },
+      period_started_at: { type: Date, default: null },
+      next_charge_at: { type: Date, default: null },
+      cancel_at_period_end: { type: Boolean, default: false },
+      /** `in_grace` while Razorpay retries a failed renewal. */
+      billing_status: { type: String, enum: ['active', 'in_grace', 'canceled', null], default: null },
+      /** Masked only: "UPI · @okhdfcbank", "Visa •••• 4242". */
+      method_display: { type: String, default: null },
+      /** Last expiry reminder sent ("3d:<expires_at>"), so each one goes out once. */
+      reminded: { type: String, default: null },
+    },
+    /** Opt-in Nearby settings. Never part of any public DTO. */
+    nearby: {
+      enabled: { type: Boolean, default: false },
+      bluetooth_enabled: { type: Boolean, default: false },
+      location_enabled: { type: Boolean, default: false },
+      notifications_enabled: { type: Boolean, default: false },
+      timezone: { type: String, default: 'Asia/Kolkata' },
+      consented_at: { type: Date, default: null },
+      updated_at: { type: Date, default: null },
+      /** Last Bluetooth sighting report. Not returned to clients. */
+      ble_reported_at: { type: Date, default: null },
+    },
   },
   {
     collection: 'users',
@@ -70,6 +109,7 @@ export type UserAttrs = InferSchemaType<typeof userSchema>;
 export type UserDoc = HydratedDocument<UserAttrs>;
 
 userSchema.index({ display_name: 1 });
+userSchema.index({ 'nearby.enabled': 1 });
 
 export const User = mongoose.model('User', userSchema);
 

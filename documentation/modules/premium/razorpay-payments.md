@@ -22,6 +22,19 @@ Razorpay is the payment gateway for Nexity plans. Users can pay with:
 
 > **Golden rule:** the **server** decides the amount. The app only sends `plan_id`, `period`, `autopay` and an optional coupon code. Every payment Nexity accepts must match the plan price computed on the server, to the paisa, or the plan is **not** activated (§4).
 
+## Implementation status
+
+Built end to end (backend `src/modules/payments/`, tests `tests/payments.test.ts`; app screens listed above). Differences from the spec below:
+
+- **Modes.** `razorpay` when `RAZORPAY_KEY_ID` + `RAZORPAY_KEY_SECRET` are set; `simulator` outside production without keys (an in-process fake Razorpay with key `rzp_test_simulator`, the app shows a "Razorpay · Test mode" sheet with Pay / Decline / Cancel); `off` in production without keys (checkout returns 503). Automated tests (`vitest`) always use the simulator and its own secret, so a developer `.env` with Razorpay keys cannot create a live order during `npm test`.
+- **Dev endpoints:** `POST /payments/dev/simulate` (simulator only) pays or declines a checkout; `POST /payments/checkouts/:id/abandon` records a cancel/decline from the app.
+- **Coupons** are constants in `quote.ts` (`NEXITY20`, `WELCOME50` first purchase only), one redemption per user per code — no coupons collection.
+- **No Mongo transactions:** the checkout is claimed atomically (`status → paid`) before the `Payment` insert, so `/verify`, the webhook and polling activate exactly once.
+- **Billing state** (period, AutoPay, `razorpay_subscription_id`, next charge, grace) lives on `user.entitlement`, not a separate subscriptions collection.
+- A new checkout cancels the user's earlier unpaid ones (a late payment on them is still honoured). Downgrading while a plan is active returns `409 PLAN_DOWNGRADE_LATER`; the same plan with AutoPay on returns `409 ALREADY_ON_PLAN`. Upgrades go through `Checkout` with a pro-rated credit, so there is no `/subscriptions/me/change`.
+- **iOS** uses the same Razorpay checkout as Android (`X-Platform: ios` is allowed). `Info.plist` lists the UPI app schemes and the `nexity` URL type so a UPI app can return to Nexity. `AppDelegate` forwards that return URL. A closed sheet is a cancel on both phones (Android code 0, iOS code 2). CocoaPods (`pod install`) is required on a Mac before the iOS binary includes the Razorpay SDK. Save QR uses `NSPhotoLibraryAddUsageDescription`.
+- **Not built yet:** changing the AutoPay payment method, invoice PDFs, admin endpoints, `FLAG_SECURE`, Google Play User Choice Billing, Apple In-App Purchase, a daily reconciliation report (the 5-minute job reconciles stale checkouts), push notifications for billing (in-app notifications only). App Store guideline 3.1.1 still expects Apple IAP for digital subscriptions when the app is submitted to the store.
+
 ---
 
 ## 1. App store rules (read before shipping)
@@ -31,7 +44,7 @@ Selling digital features inside a mobile app with a third-party gateway has stor
 | Platform | What's allowed | What Nexity does |
 |---|---|---|
 | **Android (Google Play, India)** | Google's **User Choice Billing** program lets apps in India offer an alternative billing system **next to** Google Play Billing (the user picks). Google still takes a reduced service fee, and the transactions must be reported to Google. Without enrolling, Razorpay for in-app digital subscriptions breaks the Payments policy and can get the app removed | Enrol in User Choice Billing; the checkout shows **Razorpay (UPI, cards…)** and **Google Play** as two options; report Razorpay transactions through the Play Developer API (`externaltransactions`) |
-| **iOS (App Store, India)** | Digital subscriptions bought **inside** the app must use Apple In-App Purchase. Showing Razorpay or linking to a web checkout from the iOS app is not allowed in the India storefront | iOS keeps Apple IAP ([plans-and-billing.md §2](plans-and-billing.md#2-payment-providers)). A plan bought with Razorpay on Android or on the web **also unlocks the iOS app** (same account, allowed as a multiplatform service) — but the iOS app never mentions Razorpay or the web price |
+| **iOS** | Same Razorpay checkout as Android: UPI apps, UPI ID, QR, cards, net banking, wallets, AutoPay | The iOS app opens Razorpay. A plan bought on either phone unlocks the same account. Apple IAP is not the checkout |
 | **Web** (`https://nexity.com/premium`) | No store rules | Razorpay checkout with every method, including QR on desktop |
 
 Policies change — **re-check both programs before each release** and keep this table up to date. The rest of this doc covers Razorpay on **Android and web**.
@@ -121,7 +134,7 @@ await api.payments.verify({ checkoutId: c.checkout_id, ...result });
 
 - The amount shown by Razorpay comes from the **server-created** order / subscription. The app can't change it (Razorpay ignores a different `amount` for an existing `order_id`, and the server re-checks anyway).
 - **Android UPI intent:** add a `<queries>` block in `AndroidManifest.xml` for the `upi` scheme and the UPI app packages (`com.google.android.apps.nbu.paisa.user`, `com.phonepe.app`, `net.one97.paytm`, `in.org.npci.upiapp`) so Android 11+ can open them.
-- **iOS** never opens Razorpay (§1).
+- **iOS UPI apps:** `LSApplicationQueriesSchemes` in `ios/Nexity/Info.plist` (`upi`, `tez`, `gpay`, `phonepe`, `paytmmp`, `paytm`, `bhim`, and the wallet schemes). The Razorpay pod is linked by autolinking; run `pod install` on a Mac before building iOS.
 - On app kill during payment: on next start, `GET /payments/checkouts/pending` → if one exists, show `PaymentProcessing` and poll its status.
 
 ### 3.3 `PaymentProcessing`
@@ -358,8 +371,10 @@ Channel `general`. Payment and refund notices are always sent (they ignore the `
 | `RAZORPAY_KEY_ID` | Public key id (sent to the app per checkout) |
 | `RAZORPAY_KEY_SECRET` | **Server only.** API auth + payment signature |
 | `RAZORPAY_WEBHOOK_SECRET` | **Server only.** Webhook signature (different from the key secret) |
-| `RAZORPAY_PLAN_IDS` | JSON map `{ "plus.monthly": "plan_…", … }` (written by `razorpay:sync-plans`) |
-| `PAYMENTS_ENABLED_PLATFORMS` | `android,web` |
+| `RAZORPAY_LOGO_URL` | Optional logo shown in Razorpay checkout |
+| `PAYMENTS_ENABLED_PLATFORMS` | `android,ios,web` |
+
+Razorpay plan entities are created on first use and cached in the `razorpay_plans` collection (keyed by plan, period, key mode and amount), so there is no `RAZORPAY_PLAN_IDS` / sync script.
 
 Test mode (`rzp_test_…`) in development and staging, live keys only in production, kept in the secret manager. The app gets `key_id` from the checkout response, so **no Razorpay key is ever compiled into the app**.
 
@@ -440,5 +455,5 @@ Test mode (`rzp_test_…`) in development and staging, live keys only in product
 - [ ] AutoPay renews automatically with a reminder 24 h before; failed renewals give a 3-day grace and then move the user to Free.
 - [ ] Cancel AutoPay keeps the plan until the period ends; upgrade charges only the pro-rated difference.
 - [ ] No card, UPI PIN or bank data is stored or logged by Nexity; no Razorpay secret is in the app.
-- [ ] iOS never shows Razorpay; a plan bought on Android / web unlocks the same account on iOS.
+- [ ] Android and iOS open the same Razorpay checkout; a plan bought on either phone unlocks the same account.
 - [ ] Works in Light, Dark and every mood.

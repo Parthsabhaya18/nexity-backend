@@ -7,7 +7,15 @@ import { healthRouter } from '../modules/health/health.routes';
 import { mediaRouter } from '../modules/media/media.routes';
 import { conversationsRouter } from '../modules/messages/messages.routes';
 import { commentsRouter, feedRouter, postsRouter } from '../modules/posts/post.routes';
+import { nearbyRouter } from '../modules/nearby/nearby.routes';
+import { paymentsRouter } from '../modules/payments/payments.routes';
 import { reelsRouter } from '../modules/reels/reel.routes';
+import {
+  secretBlocksRouter,
+  secretMessagesRouter,
+} from '../modules/secret-messages/secret.routes';
+import { secretCrushRouter } from '../modules/secret-crush/crush.routes';
+import { plansRouter, subscriptionsRouter } from '../modules/subscriptions/subscription.routes';
 import { searchRouter } from '../modules/search/search.routes';
 import { notificationsRouter } from '../modules/notifications/notification.routes';
 import { reportsRouter } from '../modules/safety/safety.routes';
@@ -19,6 +27,7 @@ export const apiRouter = Router();
 
 apiRouter.use('/health', healthRouter);
 apiRouter.use('/auth', authRouter);
+apiRouter.use('/users/me/secret-blocks', secretBlocksRouter);
 apiRouter.use('/users', usersRouter);
 apiRouter.use('/media', mediaRouter);
 apiRouter.use('/follow-requests', followRequestsRouter);
@@ -33,3 +42,9 @@ apiRouter.use('/notifications', notificationsRouter);
 apiRouter.use('/conversations', conversationsRouter);
 apiRouter.use('/gifs', gifsRouter);
 apiRouter.use('/shares', sharesRouter);
+apiRouter.use('/payments', paymentsRouter);
+apiRouter.use('/plans', plansRouter);
+apiRouter.use('/subscriptions', subscriptionsRouter);
+apiRouter.use('/nearby', nearbyRouter);
+apiRouter.use('/secret-messages', secretMessagesRouter);
+apiRouter.use('/secret-crushes', secretCrushRouter);
