@@ -21,7 +21,7 @@
 | Clickable prototype (`frontend/prototype`) | Done — whole flow simulated in the browser, no real Bluetooth, GPS or push |
 | Backend module `backend/src/modules/nearby/` | **Location and Bluetooth done** — settings, location pings, BLE tokens, mutual sightings, `GET /nearby/users`, today / yesterday hints |
 | React Native location | **Done (foreground only)** — `NearbyLocationHost` samples while the app is open; `NearbySettings` screen (in `screens/premium/`) with separate toggles and permission buttons |
-| React Native screens and BLE native code | **Android and iOS** — `Nearby` circle, `NearbyBle` on both. The advert is only the service UUID (a 16-byte id does not fit beside it). Both platforms serve the id on a readable characteristic and read it with a short connection. Android Kotlin compiles. iOS was not compiled here (no Mac) |
+| React Native screens and BLE native code | **Android and iOS** — `Nearby` circle, `NearbyBle` on both. The rotating id is inside the advert (16-bit service data on Android, local name on iOS). Phones scan only and never connect or pair. Android Kotlin compiles. iOS was not compiled here (no Mac) |
 | Secret Message backend (hint host) | **Done** — the hint shows in Secret threads ([§8](#8-secret-message-integration)) |
 | Secret Crush backend (hint host) | **Done** — hint on your own crush rows, matches and the match celebration; never on the admirer card ([§9](#9-secret-crush-integration)) |
 | Push delivery (FCM / APNs) | **Not started** — no `firebase-admin`, no `Device` model, no `@react-native-firebase/*` ([§13](#13-notifications-and-reliability)) |
@@ -208,8 +208,8 @@ Rule: install **one** BLE library. Verify on two physical Android phones (Step 2
 
 | Platform | Advertisement | How the scanner gets the EphID |
 |---|---|---|
-| Android | Nexity 128-bit service UUID only. The 16-byte EphID does not fit in the same 31-byte advert | Short GATT connection, read characteristic `EPH_ID` (16 bytes), disconnect |
-| iOS (foreground) | Nexity service UUID only (CoreBluetooth can't advertise service data) | Short GATT connection, read characteristic `EPH_ID` (16 bytes), disconnect. Cache per peripheral for the window |
+| Android | 16-bit service UUID `FFF0` plus the 16-byte EphID as manufacturer data `0x4E58` in the same advert. Non-connectable. If the radio rejects that packet, the EphID is sent alone | Read from the scan result. No connection and no pairing |
+| iOS (foreground) | 16-bit service UUID `FFF0` plus the EphID as the advert local name (CoreBluetooth can't advertise service data) | Read the Android manufacturer data, or the iOS local name, from the advert. No connection |
 
 Never broadcast user ids, usernames, phone numbers, auth tokens, or any id that is stable across windows. The device name is left as the OS default and is ignored by the scanner.
 
@@ -245,7 +245,7 @@ Entry points: Home header radar button, Settings → Nearby → "See who's nearb
 | `permission_denied` | `denied` | "Nexity needs Nearby devices permission to find people around you" + **Try again** |
 | `permission_blocked` | `blocked` | Same text + **Open Settings** (re-checks on return) |
 | `bluetooth_unavailable` | Adapter off | "Turn on Bluetooth to find people nearby" + system Bluetooth settings (Android `ACTION_REQUEST_ENABLE`) |
-| `unsupported` | No BLE advertising support (`isMultipleAdvertisementSupported() = false`) | "This phone can't use Bluetooth Nearby. Location notifications still work." |
+| `unsupported` | Not shown. Missing Bluetooth or location permission is requested. Bluetooth off opens the system switch. The screen stays on Turn on Nearby until scanning can start. |
 | `scanning` | Session running, no verified users yet | Radar animation, "Looking for people who turned on Nearby…" |
 | `found` | ≥ 1 verified user | Cards (below) + "Updated just now" |
 | `empty` | Session ended, nobody verified | "No one nearby right now" + **Scan again** |
@@ -641,7 +641,7 @@ Add **only** when BLE ships (Step 2):
 ```
 
 - `neverForLocation` is valid because we only look for our own service UUID. On Android ≤ 11 BLE scanning needs location permission (already declared) — the app asks for it with BLE on those versions only.
-- `BLUETOOTH_CONNECT` is needed for the iOS-peer GATT read.
+- `BLUETOOTH_CONNECT` lets Android show the system "turn on Bluetooth" dialog. Discovery itself does not connect.
 - Location: `ACCESS_COARSE_LOCATION` / `ACCESS_FINE_LOCATION` already present. **Don't** add `ACCESS_BACKGROUND_LOCATION`, `FOREGROUND_SERVICE_*` in Phase 1.
 - Phase 9 (background BLE, after testing): `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_CONNECTED_DEVICE`, a service with `foregroundServiceType="connectedDevice"` and a persistent notification.
 - `react-native-permissions`: add `BLUETOOTH_SCAN`, `BLUETOOTH_ADVERTISE`, `BLUETOOTH_CONNECT` to the handled list.
