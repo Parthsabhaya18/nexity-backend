@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { type Types } from 'mongoose';
 
 import { nearbyConfig } from '../../config/env';
+import { emitToUser } from '../../realtime/io';
 import { ApiError } from '../../utils/ApiError';
 import { toUserSummaries } from '../follows/follow.service';
 import { User, type UserDoc } from '../users/user.model';
@@ -16,7 +17,6 @@ const MAX_LIVE = 16;
 const MAX_ISSUED_PER_WINDOW = 30;
 const SKEW_MS = 2 * 60_000;
 const PRESENCE_MS = 300_000;
-const SIGHTING_GAP_MS = 20_000;
 const MAX_SIGHTING_AGE_MS = 10 * 60_000;
 
 const hashOf = (ephId: string) => createHash('sha256').update(ephId).digest('hex');
@@ -105,13 +105,6 @@ export async function reportSightings(user: UserDoc, sightings: SightingInput[],
   if (!bluetoothOn(user)) {
     throw ApiError.conflict('Turn on Bluetooth discovery first.', 'NEARBY_DISABLED');
   }
-  const fresh = await User.findById(user._id).select('nearby.ble_reported_at').lean();
-  const last = fresh?.nearby?.ble_reported_at;
-  if (last && now.getTime() - new Date(last).getTime() < SIGHTING_GAP_MS) {
-    throw ApiError.tooMany('Nearby reports are limited. Try again shortly.', undefined, 'TOO_MANY_REQUESTS');
-  }
-  await User.updateOne({ _id: user._id }, { $set: { 'nearby.ble_reported_at': now } });
-
   let accepted = 0;
   for (const row of sightings.slice(0, 50)) {
     if (await storeSighting(user, row, now)) accepted += 1;
@@ -123,7 +116,7 @@ async function storeSighting(reporter: UserDoc, row: SightingInput, now: Date) {
   if (row.first_seen_at > row.last_seen_at) return false;
   if (row.last_seen_at.getTime() > now.getTime() + 60_000) return false;
   if (now.getTime() - row.last_seen_at.getTime() > MAX_SIGHTING_AGE_MS) return false;
-  if (row.rssi_max < -90 && row.count < 3) return false;
+  if (row.rssi_max < -100 && row.count < 2) return false;
 
   const token = await NearbyBleToken.findOne({
     token_hash: hashOf(row.eph_id),
@@ -189,6 +182,9 @@ async function verifyMutual(reporterId: Types.ObjectId, subjectId: Types.ObjectI
     { $set: { user_a: low, user_b: high, expires_at: expiresAt } },
     { upsert: true },
   );
+  const at = now.toISOString();
+  emitToUser(reporterId.toString(), 'nearby.updated', { at });
+  emitToUser(subjectId.toString(), 'nearby.updated', { at });
   await recordEncounter(reporterId, subjectId, 'ble', now);
 }
 
