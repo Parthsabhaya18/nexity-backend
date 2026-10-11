@@ -29,6 +29,8 @@ const reelSchema = new mongoose.Schema(
     hide_like_count: { type: Boolean, default: false },
     comments_disabled: { type: Boolean, default: false },
     likes_count: { type: Number, default: 0, min: 0 },
+    /** People who started this reel. One row in `reel_plays` per viewer. */
+    plays_count: { type: Number, default: 0, min: 0 },
     comments_count: { type: Number, default: 0, min: 0 },
     client_upload_id: { type: String, default: null },
     deleted_at: { type: Date, default: null },
@@ -64,7 +66,17 @@ const reelSaveSchema = new mongoose.Schema(
 reelSaveSchema.index({ user_id: 1, reel_id: 1 }, { unique: true });
 reelSaveSchema.index({ user_id: 1, _id: -1 });
 
+const reelPlaySchema = new mongoose.Schema(
+  {
+    user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    reel_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Reel', required: true },
+  },
+  { collection: 'reel_plays', timestamps: { createdAt: 'created_at', updatedAt: false } as const },
+);
+reelPlaySchema.index({ user_id: 1, reel_id: 1 }, { unique: true });
+
 export type ReelDoc = HydratedDocument<InferSchemaType<typeof reelSchema>>;
 export const Reel = mongoose.model('Reel', reelSchema);
 export const ReelLike = mongoose.model('ReelLike', reelLikeSchema);
+export const ReelPlay = mongoose.model('ReelPlay', reelPlaySchema);
 export const ReelSave = mongoose.model('ReelSave', reelSaveSchema);

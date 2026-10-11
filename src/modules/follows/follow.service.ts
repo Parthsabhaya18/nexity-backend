@@ -5,7 +5,7 @@ import { ApiError } from '../../utils/ApiError';
 import { userSearchFilter } from '../../utils/regex';
 import { isBlockedEither } from '../safety/block.service';
 import { isMuted } from '../safety/mute.service';
-import { entitlementOf } from '../subscriptions/entitlement.service';
+import { planBadgeOf } from '../subscriptions/entitlement.service';
 import { avatarUrlOf, sharesActivity, User, type UserDoc } from '../users/user.model';
 import { Follow } from './follow.model';
 import type { ConnectionsQuery, PageQuery } from './follow.schema';
@@ -66,6 +66,7 @@ export async function toUserSummaries(viewer: UserDoc, users: UserDoc[]) {
       is_private: u.is_private,
       is_self: u._id.equals(viewer._id),
       follow_status: statuses.get(u.id as string) ?? ('none' as FollowStatus),
+      plan_badge: planBadgeOf(u),
     })),
   );
 }
@@ -159,10 +160,7 @@ export async function getProfile(viewer: UserDoc, username: string) {
     follows_you: Boolean(followsYou),
     muted,
     can_view_content: isSelf || !user.is_private || status === 'accepted',
-    plan_badge: (() => {
-      const plan = entitlementOf(user).plan;
-      return plan === 'free' ? null : plan;
-    })(),
+    plan_badge: planBadgeOf(user),
     presence: sharesActivity(user)
       ? {
           online: isOnline(user.id as string),

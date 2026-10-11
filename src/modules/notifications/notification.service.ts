@@ -9,6 +9,7 @@ import {
   User,
   type UserDoc,
 } from '../users/user.model';
+import { planBadgeOf } from '../subscriptions/entitlement.service';
 import { Notification, type NotificationType } from './notification.model';
 
 const pageOf = (limit: number) => Math.min(50, Math.max(1, limit || 20));
@@ -131,6 +132,7 @@ export async function listNotifications(
               username: actor.username,
               display_name: actor.display_name,
               avatar_url: await avatarUrlOf(actor),
+              plan_badge: planBadgeOf(actor),
             }
           : null,
       };

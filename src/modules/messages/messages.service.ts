@@ -62,6 +62,7 @@ function participantDto(id: string, users: UserMap) {
         display_name: 'Nexity user',
         avatar_url: null,
         last_active_at: null,
+        plan_badge: null,
       };
   return { ...base, is_online: sharesActivity(user) && isOnline(id) };
 }
@@ -144,7 +145,12 @@ export type SharedRef = {
   id: string;
   available: boolean;
   /** The post/reel author, or the shared account itself. */
-  author: { id: string; username: string; avatar_url: string | null } | null;
+  author: {
+    id: string;
+    username: string;
+    avatar_url: string | null;
+    plan_badge: 'plus' | 'premium' | null;
+  } | null;
   caption: string;
   /** Photo of the post, or the reel's cover; null when there is only a video. */
   image_url: string | null;
@@ -278,7 +284,12 @@ async function sharedRefs(rows: MessageAttrs[]) {
     const u = users.get(id.toString());
     if (!u) return null;
     const dto = toPublicUserDto(u);
-    return { id: dto.id, username: dto.username, avatar_url: dto.avatar_url };
+    return {
+      id: dto.id,
+      username: dto.username,
+      avatar_url: dto.avatar_url,
+      plan_badge: dto.plan_badge,
+    };
   };
   const indexes = new Map<string, Set<number>>();
   for (const m of rows) {

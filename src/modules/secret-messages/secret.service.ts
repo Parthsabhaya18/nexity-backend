@@ -149,6 +149,7 @@ const publicUser = (u: PublicUserSource | undefined) => {
     username: dto.username,
     display_name: dto.display_name,
     avatar_url: dto.avatar_url,
+    plan_badge: dto.plan_badge,
   };
 };
 

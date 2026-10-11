@@ -75,6 +75,9 @@ const addComment: RequestHandler = async (req, res) => {
   const { body } = commentBodySchema.parse(req.body);
   res.status(201).json(await reels.addReelComment(req.user!, idParams.parse(req.params).reelId, body));
 };
+const play: RequestHandler = async (req, res) => {
+  res.json(await reels.recordPlay(req.user!, idParams.parse(req.params).reelId));
+};
 const likers: RequestHandler = async (req, res) => {
   const { cursor, limit } = cursorQuerySchema.parse(req.query);
   res.json(await reels.listReelLikers(req.user!, idParams.parse(req.params).reelId, cursor, limit));
@@ -99,6 +102,7 @@ reelsRouter.put('/:reelId/like', likeOn);
 reelsRouter.delete('/:reelId/like', likeOff);
 reelsRouter.post('/:reelId/save', save);
 reelsRouter.get('/:reelId/comments', comments);
+reelsRouter.post('/:reelId/play', play);
 reelsRouter.get('/:reelId/likers', likers);
 reelsRouter.post('/:reelId/comments', addComment);
 reelsRouter.get('/:reelId', getOne);

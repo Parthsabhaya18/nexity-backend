@@ -26,8 +26,6 @@ const planSchema = new mongoose.Schema(
     mrp_inr: { type: Number, required: true, min: 0 },
     pricing: {
       monthly: { type: Number, required: true, min: 0 },
-      quarterly: { type: Number, required: true, min: 0 },
-      yearly: { type: Number, required: true, min: 0 },
     },
     features: { type: [String], default: [] },
     /** Shown crossed out on the card ("what you don't get"). */

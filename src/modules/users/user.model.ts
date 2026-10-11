@@ -143,6 +143,10 @@ export interface PublicUserSource {
   avatar_key?: string | null;
   last_active_at?: Date | null;
   show_activity_status?: boolean | null;
+  entitlement?: {
+    plan?: string | null;
+    expires_at?: Date | null;
+  } | null;
 }
 
 /** False when the user turned "Show activity status" off. */
@@ -167,11 +171,19 @@ export function toPublicUserDto(user: PublicUserSource) {
     avatar_url: user.avatar_url ?? null,
     last_active_at:
       user.last_active_at && sharesActivity(user) ? user.last_active_at.toISOString() : null,
+    plan_badge: publicPlanBadge(user),
   };
 }
 
+function publicPlanBadge(user: PublicUserSource): 'plus' | 'premium' | null {
+  if (user.entitlement?.plan !== 'premium') return null;
+  const expires = user.entitlement?.expires_at ? new Date(user.entitlement.expires_at) : null;
+  if (expires && expires.getTime() <= Date.now()) return null;
+  return 'premium';
+}
+
 export const PUBLIC_USER_FIELDS =
-  '_id username display_name avatar_url avatar_key last_active_at show_activity_status';
+  '_id username display_name avatar_url avatar_key last_active_at show_activity_status entitlement';
 
 /** Missing keys (accounts created before the setting existed) read as on. */
 export function notificationSettingsOf(user: Pick<UserAttrs, 'notification_settings'>) {

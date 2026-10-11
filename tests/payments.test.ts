@@ -170,7 +170,8 @@ describe('plans & quotes', () => {
     expect(plans.body.payments.mode).toBe('simulator');
     const premium = plans.body.data.find((p: { id: string }) => p.id === 'premium');
     expect(premium.pricing.monthly.amount_paise).toBe(24900);
-    expect(premium.pricing.yearly).toMatchObject({ amount_paise: 224100, save_pct: 25 });
+    expect(premium.pricing.quarterly).toBeUndefined();
+    expect(premium.pricing.yearly).toBeUndefined();
 
     const ios = await api(alice, 'ios').get('/plans');
     expect(ios.body.checkout_available).toBe(true);
@@ -191,17 +192,21 @@ describe('plans & quotes', () => {
   it('computes every plan × period, coupons and their errors on the server', async () => {
     const alice = await signUp('alice');
     const table = {
-      plus: { monthly: 9900, quarterly: 26700, yearly: 89100 },
-      premium: { monthly: 24900, quarterly: 67200, yearly: 224100 },
+      plus: 9900,
+      premium: 24900,
     } as const;
     for (const plan of ['plus', 'premium'] as const) {
-      for (const period of ['monthly', 'quarterly', 'yearly'] as const) {
-        const q = await api(alice).post('/payments/quote', { plan_id: plan, period, autopay: true });
-        expect(q.status).toBe(200);
-        expect(q.body.amount_paise).toBe(table[plan][period]);
-        expect(q.body.renewal_paise).toBe(table[plan][period]);
-      }
+      const q = await api(alice).post('/payments/quote', { plan_id: plan, period: 'monthly', autopay: true });
+      expect(q.status).toBe(200);
+      expect(q.body.amount_paise).toBe(table[plan]);
+      expect(q.body.renewal_paise).toBe(table[plan]);
     }
+    const gone = await api(alice).post('/payments/quote', {
+      plan_id: 'premium',
+      period: 'yearly',
+      autopay: true,
+    });
+    expect(gone.status).toBe(400);
     const coupon = await api(alice).post('/payments/quote', {
       plan_id: 'premium',
       period: 'monthly',
@@ -431,7 +436,7 @@ describe('one-time payments', () => {
 
   it('app killed after paying: polling (or the webhook) still activates the plan', async () => {
     const alice = await signUp('alice');
-    const c = await checkout(alice, { plan: 'premium', period: 'yearly' });
+    const c = await checkout(alice, { plan: 'premium', period: 'monthly' });
     await simulate(alice, c.body.checkout_id);
     // No /verify. Next app start asks for pending checkouts; the server checks Razorpay.
     await api(alice).get('/payments/checkouts/pending');
@@ -440,7 +445,7 @@ describe('one-time payments', () => {
     const sub = await me(alice);
     expect(sub.plan).toBe('premium');
     const days = (new Date(sub.current_period_end).getTime() - Date.now()) / 86_400_000;
-    expect(Math.round(days)).toBe(360);
+    expect(Math.round(days)).toBe(30);
   });
 
   it('Scan QR: one-time only, paid from another phone, found by polling', async () => {

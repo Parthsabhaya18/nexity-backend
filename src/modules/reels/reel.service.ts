@@ -15,7 +15,7 @@ import { extractMentions, MAX_MENTIONS } from '../posts/caption';
 import { Comment, CommentLike, PostSave } from '../posts/post.engage.model';
 import { commentDto, presentPosts } from '../posts/post.extra';
 import { Post } from '../posts/post.model';
-import { Reel, ReelLike, ReelSave, type ReelDoc } from './reel.model';
+import { Reel, ReelLike, ReelPlay, ReelSave, type ReelDoc } from './reel.model';
 import { MONGO_DUPLICATE_KEY } from '../../utils/mongo';
 
 const pageOf = (limit: number) => Math.min(50, Math.max(1, limit || 20));
@@ -49,6 +49,7 @@ async function toReelDto(
     trim_end_ms: reel.trim_end_ms,
     /** Hidden from everyone, the owner included, while `hide_like_count` is on. */
     likes_count: reel.hide_like_count ? null : reel.likes_count,
+    plays_count: reel.plays_count ?? 0,
     comments_count: reel.comments_count,
     hide_like_count: reel.hide_like_count ?? false,
     comments_disabled: reel.comments_disabled ?? false,
@@ -306,6 +307,25 @@ async function visibleReel(viewer: UserDoc, reelId: string) {
     throw ApiError.forbidden('This account is private.', 'PRIVATE_ACCOUNT');
   }
   return { reel, author };
+}
+
+/** Counts the viewer once. Replaying the same reel does not add another play. */
+export async function recordPlay(viewer: UserDoc, reelId: string) {
+  const { reel } = await visibleReel(viewer, reelId);
+  try {
+    await ReelPlay.create({ user_id: viewer._id, reel_id: reel._id });
+  } catch (err) {
+    if (err instanceof mongoose.mongo.MongoServerError && err.code === MONGO_DUPLICATE_KEY) {
+      return { plays_count: reel.plays_count ?? 0 };
+    }
+    throw err;
+  }
+  const updated = await Reel.findOneAndUpdate(
+    { _id: reel._id },
+    { $inc: { plays_count: 1 } },
+    { returnDocument: 'after' },
+  );
+  return { plays_count: updated?.plays_count ?? (reel.plays_count ?? 0) + 1 };
 }
 
 export async function getReel(viewer: UserDoc, reelId: string) {

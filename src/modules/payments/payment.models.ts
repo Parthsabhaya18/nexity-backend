@@ -1,7 +1,7 @@
 import mongoose, { type HydratedDocument, type InferSchemaType } from 'mongoose';
 
 import { PLAN_IDS } from '../users/user.model';
-import { PERIODS } from '../subscriptions/plans';
+import { STORED_PERIODS } from '../subscriptions/plans';
 
 export const CHECKOUT_STATUSES = [
   'created',
@@ -43,7 +43,7 @@ const checkoutSchema = new mongoose.Schema(
     public_id: { type: String, required: true },
     user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     plan_id: { type: String, enum: PLAN_IDS, required: true },
-    period: { type: String, enum: PERIODS, required: true },
+    period: { type: String, enum: STORED_PERIODS, required: true },
     type: { type: String, enum: CHECKOUT_TYPES, required: true },
     autopay: { type: Boolean, required: true },
     method: { type: String, default: null },
@@ -91,7 +91,7 @@ const paymentSchema = new mongoose.Schema(
     checkout_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PaymentCheckout', default: null },
     razorpay_subscription_id: { type: String, default: null },
     plan_id: { type: String, enum: PLAN_IDS, required: true },
-    period: { type: String, enum: PERIODS, required: true },
+    period: { type: String, enum: STORED_PERIODS, required: true },
     kind: { type: String, enum: ['first', 'renewal', 'one_time', 'upgrade'], required: true },
     amount_paise: { type: Number, required: true },
     currency: { type: String, default: 'INR' },

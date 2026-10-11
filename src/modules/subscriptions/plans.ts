@@ -13,10 +13,12 @@ export type PlanLimits = {
   badge: boolean;
 };
 
-export const PERIODS = ['monthly', 'quarterly', 'yearly'] as const;
+/** New purchases. Older paid rows may still say quarterly or yearly. */
+export const PERIODS = ['monthly'] as const;
 export type Period = (typeof PERIODS)[number];
+export const STORED_PERIODS = ['monthly', 'quarterly', 'yearly'] as const;
 
-export const PERIOD_MONTHS: Record<Period, number> = { monthly: 1, quarterly: 3, yearly: 12 };
+export const PERIOD_MONTHS: Record<Period, number> = { monthly: 1 };
 /** Paid time per period: months × 30 days (razorpay-payments.md §5.5). */
 export const periodMs = (period: Period) => PERIOD_MONTHS[period] * 30 * 86_400_000;
 
@@ -48,7 +50,7 @@ export const DEFAULT_PLANS: Record<PlanId, Plan> = {
     active: true,
     price_inr: 0,
     mrp_inr: 0,
-    pricing: { monthly: 0, quarterly: 0, yearly: 0 },
+    pricing: { monthly: 0 },
     features: [
       'Posts, Reels, Stories and Chat',
       'Get notified when someone sends you a Secret Message',
@@ -79,7 +81,7 @@ export const DEFAULT_PLANS: Record<PlanId, Plan> = {
     active: true,
     price_inr: 99,
     mrp_inr: 149,
-    pricing: { monthly: 9900, quarterly: 26700, yearly: 89100 },
+    pricing: { monthly: 9900 },
     features: [
       'Open & reply to Secret Messages',
       'Send 5 Secret Messages a month',
@@ -107,7 +109,7 @@ export const DEFAULT_PLANS: Record<PlanId, Plan> = {
     active: true,
     price_inr: 249,
     mrp_inr: 399,
-    pricing: { monthly: 24900, quarterly: 67200, yearly: 224100 },
+    pricing: { monthly: 24900 },
     features: [
       'Everything in Plus',
       'Unlimited Secret Messages (fair use)',
@@ -139,7 +141,7 @@ export const PAGE_KEY = 'default';
 export const DEFAULT_PAGE = {
   key: PAGE_KEY,
   title: 'Unlock your secret side',
-  subtitle: 'Simple plans. Save up to 25% when you pay yearly.',
+  subtitle: 'Simple monthly plans. Cancel anytime.',
   current_prefix: "You're on",
   checkout_unavailable_note: 'Payments are not available right now.',
   reasons: {
@@ -182,7 +184,7 @@ export const DEFAULT_PAGE = {
     { label: 'Premium profile badge 👑', limit: 'badge' },
   ] as CompareRow[],
   trust: [
-    { icon: 'repeat', title: '', text: 'Monthly, 3-month or yearly' },
+    { icon: 'repeat', title: '', text: 'Billed monthly' },
     { icon: 'x', title: '', text: 'Cancel anytime' },
     { icon: 'shield-check', title: '', text: 'Secure payment by Razorpay' },
   ] as IconText[],
@@ -211,7 +213,7 @@ function toPlan(doc: Record<string, unknown>, fallback: Plan): Plan {
     active: d.active ?? true,
     price_inr: d.price_inr ?? fallback.price_inr,
     mrp_inr: d.mrp_inr ?? fallback.mrp_inr,
-    pricing: { ...fallback.pricing, ...d.pricing },
+    pricing: { monthly: d.pricing?.monthly ?? fallback.pricing.monthly },
     features: d.features ?? [],
     missing_features: d.missing_features ?? [],
     icon: d.icon ?? fallback.icon,
@@ -227,6 +229,13 @@ async function load() {
       PlanModel.updateOne({ id }, { $setOnInsert: DEFAULT_PLANS[id] }, { upsert: true }),
     ),
     PlansPage.updateOne({ key: PAGE_KEY }, { $setOnInsert: DEFAULT_PAGE }, { upsert: true }),
+  ]);
+  await Promise.all([
+    PlanModel.updateMany({}, { $unset: { 'pricing.quarterly': '', 'pricing.yearly': '' } }),
+    PlansPage.updateOne(
+      { key: PAGE_KEY },
+      { $set: { subtitle: DEFAULT_PAGE.subtitle, trust: DEFAULT_PAGE.trust } },
+    ),
   ]);
   const [docs, pageDoc] = await Promise.all([
     PlanModel.find({ id: { $in: PLAN_IDS } }).lean(),

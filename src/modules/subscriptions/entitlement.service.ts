@@ -16,7 +16,7 @@ export type Entitlement = {
   limits: Plan['limits'];
 };
 
-type EntitlementSource = Pick<UserDoc, 'entitlement'>;
+export type EntitlementSource = Pick<UserDoc, 'entitlement'>;
 
 /** The plan in force right now. A stale cache past `expires_at` counts as Free. */
 export function entitlementOf(user: EntitlementSource, now = new Date()): Entitlement {
@@ -31,6 +31,11 @@ export function entitlementOf(user: EntitlementSource, now = new Date()): Entitl
     expires_at: active ? expiresAt : null,
     limits: PLANS[effective].limits,
   };
+}
+
+/** Profile mark. Only an active Premium plan. Plus and Free stay unmarked. */
+export function planBadgeOf(user: EntitlementSource): 'plus' | 'premium' | null {
+  return entitlementOf(user).plan === 'premium' ? 'premium' : null;
 }
 
 function istParts(now: Date) {

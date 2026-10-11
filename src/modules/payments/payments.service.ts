@@ -46,7 +46,7 @@ const PENDING_GIVE_UP_MS = 30 * 60_000;
 const GRACE_MS = 3 * 86_400_000;
 const POLL_THROTTLE_MS = env.NODE_ENV === 'test' ? 0 : 2_000;
 /** ≈ 10 years of renewals; cancel anytime. */
-const TOTAL_COUNT: Record<Period, number> = { monthly: 120, quarterly: 40, yearly: 10 };
+const TOTAL_COUNT: Record<Period, number> = { monthly: 120 };
 
 export const PAYMENT_METHODS = ['upi', 'qr', 'card', 'netbanking', 'wallet'] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
@@ -58,8 +58,6 @@ const isDuplicate = (err: unknown) =>
 
 const PERIOD_LABEL: Record<Period, string> = {
   monthly: 'Monthly',
-  quarterly: '3 months',
-  yearly: 'Yearly',
 };
 
 export const rupees = (paise: number) =>
@@ -105,22 +103,15 @@ export function catalog() {
     .map((plan) => {
       const { price_inr, ...rest } = plan;
       void price_inr;
-      const pricing = Object.fromEntries(
-        (['monthly', 'quarterly', 'yearly'] as const).map((period) => {
-          const amount = plan.pricing[period];
-          const months = PERIOD_MONTHS[period];
-          const full = plan.pricing.monthly * months;
-          return [
-            period,
-            {
-              amount_paise: amount,
-              months,
-              per_month_paise: Math.floor(amount / months),
-              save_pct: full > 0 ? Math.round((1 - amount / full) * 100) : 0,
-            },
-          ];
-        }),
-      );
+      const amount = plan.pricing.monthly;
+      const pricing = {
+        monthly: {
+          amount_paise: amount,
+          months: PERIOD_MONTHS.monthly,
+          per_month_paise: amount,
+          save_pct: 0,
+        },
+      };
       return { ...rest, pricing, mrp_paise: plan.mrp_inr * 100 };
     });
 }
@@ -153,8 +144,8 @@ async function razorpayPlanId(planId: PlanId, period: Period) {
   const found = await RazorpayPlan.findOne({ key, mode: paymentsMode, amount_paise: amount }).lean();
   if (found) return found.razorpay_plan_id;
   const created = await gateway.createPlan({
-    period: period === 'yearly' ? 'yearly' : 'monthly',
-    interval: period === 'quarterly' ? 3 : 1,
+    period: 'monthly',
+    interval: 1,
     name: `Nexity ${PLANS[planId].name} · ${PERIOD_LABEL[period]}`,
     amount,
   });
