@@ -12,7 +12,7 @@ import { Media } from '../media/media.model';
 import { viewUrl } from '../media/media.storage';
 import { User, type UserDoc } from '../users/user.model';
 import { extractMentions, MAX_MENTIONS } from '../posts/caption';
-import { Comment, PostSave } from '../posts/post.engage.model';
+import { Comment, CommentLike, PostSave } from '../posts/post.engage.model';
 import { commentDto, presentPosts } from '../posts/post.extra';
 import { Post } from '../posts/post.model';
 import { Reel, ReelLike, ReelSave, type ReelDoc } from './reel.model';
@@ -31,7 +31,7 @@ async function toReelDto(
   return {
     id: reel.id as string,
     author: summary!,
-    video_url: await viewUrl(reel.video_key),
+    video_url: await viewUrl(reel.video_key, author.is_private ? 'private' : 'public'),
     width: reel.width,
     height: reel.height,
     duration_ms: reel.duration_ms,
@@ -42,7 +42,9 @@ async function toReelDto(
     location_lng: reel.location_lng ?? null,
     audio_muted: reel.audio_muted ?? false,
     cover_time_ms: reel.cover_time_ms ?? 0,
-    cover_url: reel.cover_key ? await viewUrl(reel.cover_key) : null,
+    cover_url: reel.cover_key
+      ? await viewUrl(reel.cover_key, author.is_private ? 'private' : 'public')
+      : null,
     trim_start_ms: reel.trim_start_ms,
     trim_end_ms: reel.trim_end_ms,
     /** Hidden from everyone, the owner included, while `hide_like_count` is on. */
@@ -454,8 +456,39 @@ export async function listReelComments(viewer: UserDoc, reelId: string, cursor: 
   const page = rows.slice(0, take);
   const users = await User.find({ _id: { $in: page.map((c) => c.author_id) } });
   const byId = new Map(users.map((u) => [u.id as string, u]));
+  const likedRows = page.length
+    ? await CommentLike.find({ user_id: viewer._id, comment_id: { $in: page.map((c) => c._id) } })
+        .select('comment_id')
+        .lean()
+    : [];
+  const liked = new Set(likedRows.map((r) => String(r.comment_id)));
   return {
-    items: await Promise.all(page.map((c) => commentDto(c, byId))),
+    items: await Promise.all(page.map((c) => commentDto(c, byId, [], liked))),
     next_cursor: rows.length > take ? (page[page.length - 1]!.id as string) : null,
+  };
+}
+
+export async function listReelLikers(viewer: UserDoc, reelId: string, cursor: string | undefined, limit: number) {
+  const { reel } = await visibleReel(viewer, reelId);
+  if (reel.hide_like_count && !reel.author_id.equals(viewer._id)) {
+    throw ApiError.forbidden('The like count is hidden on this reel.', 'LIKES_HIDDEN');
+  }
+  const take = pageOf(limit);
+  const filter: Record<string, unknown> = { reel_id: reel._id };
+  if (cursor) filter._id = { $lt: cursor };
+  const rows = await ReelLike.find(filter)
+    .sort({ _id: -1 })
+    .limit(take + 1)
+    .lean();
+  const page = rows.slice(0, take);
+  const users = await User.find({ _id: { $in: page.map((r) => r.user_id) }, status: 'active' });
+  const byId = new Map(users.map((u) => [u.id as string, u]));
+  const ordered = page.flatMap((r) => {
+    const u = byId.get(r.user_id.toHexString());
+    return u ? [u] : [];
+  });
+  return {
+    items: await toUserSummaries(viewer, ordered),
+    next_cursor: rows.length > take ? String(page[page.length - 1]!._id) : null,
   };
 }

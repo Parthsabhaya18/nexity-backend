@@ -54,7 +54,10 @@ export async function toMediaDto(media: MediaDoc) {
     purpose: media.purpose,
     kind: media.kind,
     status: media.status,
-    url: media.status === 'ready' ? await storage.viewUrl(media.key) : null,
+    url:
+      media.status === 'ready'
+        ? await storage.viewUrl(media.key, media.purpose === 'avatar' ? 'public' : 'private')
+        : null,
     content_type: media.content_type,
     bytes: media.bytes,
     width: media.width ?? null,

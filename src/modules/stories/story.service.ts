@@ -91,11 +91,13 @@ function checkOverlays(overlays: StoryOverlay[]) {
   }
 }
 
-async function storyMedia(story: StoryDoc, counts?: VoteCounts) {
+async function storyMedia(story: StoryDoc, counts?: VoteCounts, isPrivate?: boolean) {
+  const locked =
+    isPrivate ?? Boolean(await User.exists({ _id: story.author_id, is_private: true }));
   return {
     id: story.id as string,
     kind: story.kind,
-    url: await viewUrl(story.key),
+    url: await viewUrl(story.key, locked ? 'private' : 'public'),
     width: story.width,
     height: story.height,
     duration_ms: story.duration_ms,
@@ -260,6 +262,9 @@ export async function storyTray(viewer: UserDoc) {
     .lean();
   const liked = new Set(likeRows.map((r) => r.story_id.toHexString()));
   const users = await User.find({ _id: { $in: authorIds } });
+  const privateAuthors = new Set(
+    users.filter((u) => u.is_private).map((u) => u.id as string),
+  );
   const summaries = new Map((await toUserSummaries(viewer, users)).map((u) => [u.id, u]));
 
   const groups = new Map<string, StoryDoc[]>();
@@ -274,7 +279,7 @@ export async function storyTray(viewer: UserDoc) {
       seen: list.every((s) => seenBy(s)),
       stories: await Promise.all(
         list.map(async (s) => ({
-          ...(await storyMedia(s, counts.get(s.id as string))),
+          ...(await storyMedia(s, counts.get(s.id as string), privateAuthors.has(id))),
           seen: seenBy(s),
           liked_by_me: liked.has(s.id as string),
         })),

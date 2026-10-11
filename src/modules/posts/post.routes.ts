@@ -13,6 +13,8 @@ import {
   likePostOn,
   postComments,
   postLikers,
+  likeCommentOff,
+  likeCommentOn,
   removeComment,
   savePost,
   saved,
@@ -40,6 +42,8 @@ feedRouter.use(requireAuth);
 feedRouter.get('/', feed);
 
 commentsRouter.use(requireAuth);
+commentsRouter.put('/:commentId/like', likeCommentOn);
+commentsRouter.delete('/:commentId/like', likeCommentOff);
 commentsRouter.delete('/:commentId', (req, res, next) => {
   if (!objectIdSchema.safeParse(req.params.commentId).success) {
     next();

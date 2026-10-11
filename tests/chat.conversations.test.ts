@@ -2,6 +2,7 @@ import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 
 import { Conversation } from '../src/modules/messages/conversation.model';
+import { Block } from '../src/modules/safety/block.model';
 import { api, app, openChat, person, send, useChatHarness } from './chatHarness';
 
 useChatHarness();
@@ -37,6 +38,25 @@ describe('opening a direct conversation', () => {
       const res = await api(riya).post('/conversations', body);
       expect(res.status, JSON.stringify(body)).toBe(400);
     }
+  });
+
+  it('stops a blocked person from opening or sending a chat', async () => {
+    const riya = await person('riya.writes');
+    const arjun = await person('arjun.k');
+    const id = await openChat(riya, arjun);
+    await Block.create({ blocker_id: riya.id, blocked_id: arjun.id });
+
+    const opened = await api(arjun).post('/conversations', { participant_ids: [riya.id] });
+    expect(opened.status).toBe(403);
+    expect(opened.body.error.code).toBe('USER_BLOCKED');
+
+    const sent = await send(arjun, id, 'hello');
+    expect(sent.status).toBe(403);
+    expect(sent.body.error.code).toBe('USER_BLOCKED');
+
+    const back = await send(riya, id, 'hello');
+    expect(back.status).toBe(403);
+    expect(back.body.error.code).toBe('USER_BLOCKED');
   });
 
   it('creates only one conversation when both people open it at the same time', async () => {

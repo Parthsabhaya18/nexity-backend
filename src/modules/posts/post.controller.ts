@@ -81,3 +81,11 @@ export const removeComment: RequestHandler = async (req, res) => {
   await extra.deleteComment(req.user!, String(req.params.commentId));
   res.status(204).end();
 };
+
+export const likeCommentOn: RequestHandler = async (req, res) => {
+  res.json(await extra.setCommentLike(req.user!, String(req.params.commentId), true));
+};
+
+export const likeCommentOff: RequestHandler = async (req, res) => {
+  res.json(await extra.setCommentLike(req.user!, String(req.params.commentId), false));
+};

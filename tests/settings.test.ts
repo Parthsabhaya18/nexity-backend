@@ -106,22 +106,24 @@ describe('privacy and notification settings', () => {
       .set('Authorization', b.auth)
       .send({ message_privacy: 'following' });
 
-    const convo = await request(app)
-      .post('/api/v1/conversations')
-      .set('Authorization', a.auth)
-      .send({ type: 'direct', participant_ids: [b.id] });
-    const send = () =>
+    const open = () =>
       request(app)
-        .post(`/api/v1/conversations/${convo.body.id as string}/messages`)
+        .post('/api/v1/conversations')
         .set('Authorization', a.auth)
-        .send({ body: 'hi', client_message_id: crypto.randomUUID() });
+        .send({ type: 'direct', participant_ids: [b.id] });
 
-    const blocked = await send();
-    expect(blocked.status).toBe(403);
-    expect(blocked.body.error.code).toBe('MESSAGES_RESTRICTED');
+    const refused = await open();
+    expect(refused.status).toBe(403);
+    expect(refused.body.error.code).toBe('MESSAGES_RESTRICTED');
 
     await request(app).post(`/api/v1/users/${a.id}/follow`).set('Authorization', b.auth);
-    expect((await send()).status).toBe(201);
+    const convo = await open();
+    expect(convo.status).toBe(201);
+    const sent = await request(app)
+      .post(`/api/v1/conversations/${convo.body.id as string}/messages`)
+      .set('Authorization', a.auth)
+      .send({ body: 'hi', client_message_id: crypto.randomUUID() });
+    expect(sent.status).toBe(201);
   });
 });
 

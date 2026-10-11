@@ -29,6 +29,7 @@ const commentSchema = new mongoose.Schema(
     author_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     parent_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Comment', default: null },
     body: { type: String, required: true, maxlength: COMMENT_MAX },
+    likes_count: { type: Number, default: 0, min: 0 },
   },
   {
     collection: 'comments',
@@ -38,6 +39,16 @@ const commentSchema = new mongoose.Schema(
 commentSchema.index({ post_id: 1, _id: -1 });
 commentSchema.index({ reel_id: 1, _id: -1 });
 
+const commentLikeSchema = new mongoose.Schema(
+  {
+    user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    comment_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Comment', required: true },
+  },
+  { collection: 'comment_likes', timestamps: { createdAt: 'created_at', updatedAt: false } as const },
+);
+commentLikeSchema.index({ user_id: 1, comment_id: 1 }, { unique: true });
+
 export const PostLike = mongoose.model('PostLike', likeSchema);
 export const PostSave = mongoose.model('PostSave', saveSchema);
 export const Comment = mongoose.model('Comment', commentSchema);
+export const CommentLike = mongoose.model('CommentLike', commentLikeSchema);

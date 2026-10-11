@@ -21,7 +21,9 @@ async function toTicketDto(ticket: SupportTicketDoc) {
     subject: ticket.subject,
     message: ticket.message,
     status: ticket.status,
-    screenshot_urls: await Promise.all(ticket.screenshots.map((s) => viewUrl(s.key))),
+    screenshot_urls: await Promise.all(
+      ticket.screenshots.map((s) => viewUrl(s.key, 'private')),
+    ),
     created_at: (ticket.get('created_at') as Date).toISOString(),
     updated_at: (ticket.get('updated_at') as Date).toISOString(),
   };
