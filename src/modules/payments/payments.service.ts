@@ -15,12 +15,15 @@ import { type PlanId, User, type UserDoc } from '../users/user.model';
 import { MONGO_DUPLICATE_KEY } from '../../utils/mongo';
 import {
   type CheckoutDoc,
+  BillingAdjustment,
   CouponRedemption,
   Payment,
   PaymentCheckout,
   PaymentWebhookEvent,
   RazorpayPlan,
+  Refund,
 } from './payment.models';
+import { markRefundProcessed } from './planChange.service';
 import { computeQuote } from './quote';
 import {
   gateway,
@@ -174,7 +177,7 @@ function maskEmail(email: string) {
   return `${name.slice(0, 1)}***@${domain}`;
 }
 
-export function checkoutDto(c: CheckoutDoc, user: UserDoc) {
+export function checkoutDto(c: CheckoutDoc, user: UserDoc, extra?: { autopay_fallback?: boolean }) {
   const plan = PLANS[c.plan_id as PlanId];
   const q = c.quote!;
   return {
@@ -184,6 +187,7 @@ export function checkoutDto(c: CheckoutDoc, user: UserDoc) {
     plan_id: c.plan_id,
     period: c.period,
     autopay: c.autopay,
+    autopay_fallback: extra?.autopay_fallback ?? false,
     method: c.method,
     amount_paise: c.amount_paise,
     expires_at: c.expires_at.toISOString(),
@@ -217,7 +221,7 @@ export function checkoutDto(c: CheckoutDoc, user: UserDoc) {
       name: 'Nexity',
       description: `Nexity ${plan.name} · ${PERIOD_LABEL[c.period as Period]}`,
       logo_url: env.RAZORPAY_LOGO_URL ?? null,
-      prefill: { email: user.email, contact: '', method: c.method === 'qr' ? 'upi' : c.method },
+      prefill: { email: user.email, contact: '', method: null },
       email_hint: maskEmail(user.email),
     },
     simulator: paymentsMode === 'simulator',
@@ -244,6 +248,14 @@ export async function createCheckout(
   }
 
   const q = await quote(user, input);
+  if (q.kind === 'downgrade' || q.amount_paise === 0) {
+    throw ApiError.conflict(
+      q.kind === 'downgrade'
+        ? 'This downgrade does not need a payment. Confirm it to apply your unused plan value.'
+        : 'Your unused plan value covers this change. Confirm it without paying.',
+      'PAYMENT_NOT_REQUIRED',
+    );
+  }
   // An unpaid earlier attempt (sheet closed) is replaced. If it still gets paid, the payment is honoured.
   await PaymentCheckout.updateMany(
     { user_id: user._id, status: 'created' },
@@ -288,12 +300,29 @@ export async function createCheckout(
     return checkoutDto(row!, user);
   }
 
+  if (q.credit_paise > 0) {
+    const held = await User.findOneAndUpdate(
+      { _id: user._id, 'entitlement.credit_hold': null },
+      { $set: { 'entitlement.credit_hold': c.public_id } },
+    );
+    if (!held) {
+      c.status = 'cancelled';
+      c.failure_reason = 'credit_in_use';
+      await c.save();
+      throw ApiError.conflict(
+        'Another plan change is already using this subscription credit.',
+        'CREDIT_IN_USE',
+      );
+    }
+  }
+
   const notes = {
     checkout_id: c.public_id,
     user_id: user.id as string,
     plan: q.plan_id,
     period: q.period,
   };
+  let autopayFallback = false;
   try {
     if (type === 'order') {
       const order = await gateway.createOrder({
@@ -303,26 +332,44 @@ export async function createCheckout(
       });
       c.razorpay_order_id = order.id;
     } else {
-      const planId = await razorpayPlanId(q.plan_id, q.period);
-      const sub = await gateway.createSubscription({
-        planId,
-        totalCount: TOTAL_COUNT[q.period],
-        startAt: q.ends_at,
-        upfrontPaise: q.amount_paise,
-        upfrontName: `Nexity ${PLANS[q.plan_id].name} · first ${PERIOD_LABEL[q.period].toLowerCase()}`,
-        notes,
-      });
-      c.razorpay_subscription_id = sub.id;
-      c.razorpay_plan_id = planId;
+      try {
+        const planId = await razorpayPlanId(q.plan_id, q.period);
+        const sub = await gateway.createSubscription({
+          planId,
+          totalCount: TOTAL_COUNT[q.period],
+          startAt: q.ends_at,
+          upfrontPaise: q.amount_paise,
+          upfrontName: `Nexity ${PLANS[q.plan_id].name} · first ${PERIOD_LABEL[q.period].toLowerCase()}`,
+          notes,
+        });
+        c.razorpay_subscription_id = sub.id;
+        c.razorpay_plan_id = planId;
+      } catch (err) {
+        if (!(err instanceof ApiError) || err.code !== 'AUTOPAY_NOT_ENABLED') throw err;
+        logger.warn({ checkout: c.public_id }, 'Razorpay AutoPay is not enabled; creating a one-time order');
+        c.type = 'order';
+        c.autopay = false;
+        const order = await gateway.createOrder({
+          amount: q.amount_paise,
+          receipt: c.public_id.replace(/-/g, '').slice(0, 40),
+          notes,
+        });
+        c.razorpay_order_id = order.id;
+        autopayFallback = true;
+      }
     }
     await c.save();
   } catch (err) {
     c.status = 'failed';
     c.failure_reason = 'provider_error';
     await c.save();
+    await User.updateOne(
+      { _id: user._id, 'entitlement.credit_hold': c.public_id },
+      { $set: { 'entitlement.credit_hold': null } },
+    );
     throw err;
   }
-  return checkoutDto(c, user);
+  return checkoutDto(c, user, { autopay_fallback: autopayFallback });
 }
 
 /* ---------- Activation (the only writer of Razorpay entitlements) ---------- */
@@ -352,6 +399,41 @@ async function activate(c: CheckoutDoc, payment: RzpPayment) {
       : null;
   // Stacking keeps the paid rate correct for a later upgrade credit.
   const stacking = samePlanActive && stored?.source === 'razorpay' && stored.period_started_at;
+  const creditPaise = c.quote?.credit_paise ?? 0;
+  if (creditPaise > 0 && stored?.period_started_at && stored.paid_paise != null) {
+    const creditKey = `${user.id}:${stored.period_started_at.toISOString()}:${stored.paid_paise}`;
+    const prior = await BillingAdjustment.findOne({ credit_key: creditKey }).lean();
+    if (prior && prior.checkout_public_id !== c.public_id) {
+      await gateway.refund(payment.id).catch((err: unknown) => logger.error({ err }, 'Credit replay refund failed'));
+      logger.error({ checkout: c.public_id, creditKey }, 'Upgrade credit was already spent');
+      return;
+    }
+    if (!prior) {
+      await BillingAdjustment.create({
+        credit_key: creditKey,
+        user_id: user._id,
+        checkout_public_id: c.public_id,
+        reason: 'upgrade',
+        from_plan: stored.plan,
+        to_plan: c.plan_id,
+        from_period: stored.period,
+        to_period: c.period,
+        period_started_at: stored.period_started_at,
+        period_days: c.quote?.months ? c.quote.months * 30 : 30,
+        consumed_days: 0,
+        price_paise: stored.paid_paise,
+        consumed_paise: Math.max(0, stored.paid_paise - creditPaise),
+        unused_paise: creditPaise,
+        credit_applied_paise: creditPaise,
+        payable_paise: payment.amount,
+        extra_days: 0,
+        granted_paise: 0,
+        rounding_adjustment_paise: 0,
+      }).catch((err: unknown) => {
+        if (!isDuplicate(err)) throw err;
+      });
+    }
+  }
   user.set('entitlement', {
     plan: c.plan_id,
     expires_at: end,
@@ -368,6 +450,8 @@ async function activate(c: CheckoutDoc, payment: RzpPayment) {
     billing_status: 'active',
     method_display: methodDisplay(payment),
     reminded: null,
+    credit_hold: null,
+    billing_generation: (stored?.billing_generation ?? 0) + (creditPaise > 0 ? 1 : 0),
   });
   await user.save();
   await Payment.updateOne(
@@ -636,6 +720,10 @@ export async function checkoutStatus(user: UserDoc, checkoutId: string) {
     if (c.status === 'created' && c.expires_at <= new Date()) {
       await PaymentCheckout.updateOne({ _id: c._id, status: 'created' }, { $set: { status: 'expired' } });
       c.status = 'expired';
+      await User.updateOne(
+        { _id: user._id, 'entitlement.credit_hold': c.public_id },
+        { $set: { 'entitlement.credit_hold': null } },
+      );
     }
   }
   return statusDto(c);
@@ -671,6 +759,10 @@ export async function abandon(user: UserDoc, checkoutId: string, reason: 'cancel
         failure_reason: reason === 'failed' ? (description?.slice(0, 200) ?? 'Payment failed') : 'closed',
       },
     },
+  );
+  await User.updateOne(
+    { _id: user._id, 'entitlement.credit_hold': c.public_id },
+    { $set: { 'entitlement.credit_hold': null } },
   );
   return statusDto((await PaymentCheckout.findById(c._id))!);
 }
@@ -917,6 +1009,77 @@ async function gatewayPayment(entity: RzpPayment | undefined) {
   return gateway.fetchPayment(entity.id);
 }
 
+/**
+ * A subscription charge has no order id. The invoice's subscription id is accepted only after
+ * Razorpay's own invoice list for that subscription contains this payment.
+ */
+async function subscriptionForCapturedPayment(p: RzpPayment, hintedSubscriptionId?: string) {
+  if (p.status !== 'captured' || p.currency !== 'INR') return null;
+  const candidates: string[] = [];
+  if (p.invoice_id) {
+    const invoice = await gateway.fetchInvoice(p.invoice_id);
+    if (invoice?.subscription_id && invoice.payment_id === p.id) candidates.push(invoice.subscription_id);
+  }
+  if (hintedSubscriptionId) candidates.push(hintedSubscriptionId);
+  const seen = new Set<string>();
+  for (const id of candidates) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const live = await gateway.fetchSubscription(id);
+    if (!live) continue;
+    const listed = (await gateway.subscriptionPayments(live.id)).some((row) => row.id === p.id);
+    if (listed) return live;
+  }
+  return null;
+}
+
+/** First charge finalizes the checkout. A later captured charge renews. Neither runs without a listed payment. */
+async function applySubscriptionPayment(liveSub: RzpSubscription, p: RzpPayment) {
+  const c = await PaymentCheckout.findOne({ razorpay_subscription_id: liveSub.id });
+  if (c?.type === 'mandate') {
+    await finalizeMandate(c, liveSub);
+    return;
+  }
+  if (c && c.status !== 'paid') {
+    await finalize(c, p, { subscriptionId: liveSub.id });
+    return;
+  }
+  if (!(await Payment.exists({ razorpay_payment_id: p.id }))) {
+    await renew(liveSub, p);
+  }
+}
+
+/**
+ * Counts a Razorpay refund once. A second webhook event id for the same refund id does not match.
+ */
+async function applyProcessedRefund(refund: { id: string; payment_id: string; amount: number }) {
+  if (!refund.id || !Number.isInteger(refund.amount) || refund.amount <= 0) return null;
+  const updated = await Payment.findOneAndUpdate(
+    { razorpay_payment_id: refund.payment_id, applied_refund_ids: { $ne: refund.id } },
+    [
+      {
+        $set: {
+          applied_refund_ids: {
+            $setUnion: [{ $ifNull: ['$applied_refund_ids', []] }, [refund.id]],
+          },
+          refunded_paise: {
+            $min: ['$amount_paise', { $add: [{ $ifNull: ['$refunded_paise', 0] }, refund.amount] }],
+          },
+        },
+      },
+      {
+        $set: {
+          status: {
+            $cond: [{ $gte: ['$refunded_paise', '$amount_paise'] }, 'refunded', 'partially_refunded'],
+          },
+        },
+      },
+    ],
+    { returnDocument: 'after', updatePipeline: true },
+  );
+  return updated;
+}
+
 async function handleEvent(evt: WebhookPayload) {
   const claimed = evt.payload.payment?.entity;
   const p = await gatewayPayment(claimed);
@@ -925,10 +1088,16 @@ async function handleEvent(evt: WebhookPayload) {
     case 'payment.authorized':
     case 'payment.captured':
     case 'order.paid': {
-      if (!p?.order_id) return 'ignored';
-      const c = await PaymentCheckout.findOne({ razorpay_order_id: p.order_id });
-      if (!c) return 'ignored';
-      await finalize(c, p);
+      if (p?.order_id) {
+        const c = await PaymentCheckout.findOne({ razorpay_order_id: p.order_id });
+        if (!c) return 'ignored';
+        await finalize(c, p);
+        return 'processed';
+      }
+      if (evt.event !== 'payment.captured' || !p) return 'ignored';
+      const liveSub = await subscriptionForCapturedPayment(p, evt.payload.subscription?.entity?.id);
+      if (!liveSub) return 'ignored';
+      await applySubscriptionPayment(liveSub, p);
       return 'processed';
     }
     case 'payment.failed': {
@@ -952,17 +1121,51 @@ async function handleEvent(evt: WebhookPayload) {
       const liveSub = await gateway.fetchSubscription(sub.id);
       if (!liveSub) return 'ignored';
       const c = await PaymentCheckout.findOne({ razorpay_subscription_id: liveSub.id });
-      if (c?.type === 'mandate') {
-        await finalizeMandate(c, liveSub);
-        return 'processed';
+      if (!p || p.status !== 'captured') {
+        if (c?.type === 'mandate') {
+          await finalizeMandate(c, liveSub);
+          return 'processed';
+        }
+        return 'ignored';
       }
-      if (c && c.status !== 'paid' && p) {
-        await finalize(c, p, { subscriptionId: liveSub.id });
-        return 'processed';
+      const listed = (await gateway.subscriptionPayments(liveSub.id)).some((row) => row.id === p.id);
+      if (!listed) return 'ignored';
+      await applySubscriptionPayment(liveSub, p);
+      return 'processed';
+    }
+    case 'subscription.updated': {
+      if (!sub) return 'ignored';
+      const live = await gateway.fetchSubscription(sub.id);
+      if (!live) return 'ignored';
+      const user = await userBySubscription(live.id);
+      if (!user) return 'ignored';
+      if (live.status === 'pending') {
+        user.set('entitlement.billing_status', 'in_grace');
+        await user.save();
+        emitSubscription(user);
+      } else if (live.status === 'halted') {
+        await endPlan(
+          user,
+          'subscription_expired',
+          'Your plan has ended because the renewal payment failed. Your Secret Crushes are paused until you subscribe again.',
+        );
+      } else if (live.status === 'cancelled' || live.status === 'completed') {
+        user.set('entitlement.autopay', false);
+        user.set('entitlement.cancel_at_period_end', true);
+        user.set('entitlement.billing_status', 'canceled');
+        user.set('entitlement.next_charge_at', null);
+        await user.save();
+        emitSubscription(user);
       }
-      if (evt.event === 'subscription.charged' && p && !(await Payment.exists({ razorpay_payment_id: p.id }))) {
-        await renew(liveSub, p);
-      }
+      return 'processed';
+    }
+    case 'qr_code.closed': {
+      const qrId = evt.payload.qr_code?.entity.id;
+      if (!qrId) return 'ignored';
+      await PaymentCheckout.updateOne(
+        { razorpay_qr_id: qrId, status: 'created' },
+        { $set: { status: 'expired', failure_reason: 'qr_closed' } },
+      );
       return 'processed';
     }
     case 'subscription.pending': {
@@ -1009,14 +1212,54 @@ async function handleEvent(evt: WebhookPayload) {
       emitSubscription(user);
       return 'processed';
     }
+    case 'refund.created': {
+      const refund = evt.payload.refund?.entity;
+      if (!refund?.id) return 'ignored';
+      const row = await Payment.findOne({ razorpay_payment_id: refund.payment_id });
+      if (!row) return 'ignored';
+      if (row.applied_refund_ids?.includes(refund.id)) return 'processed';
+      await Refund.updateOne(
+        { razorpay_refund_id: refund.id },
+        {
+          $setOnInsert: {
+            public_id: randomUUID(),
+            user_id: row.user_id,
+            payment_id: row._id,
+            razorpay_payment_id: row.razorpay_payment_id,
+            razorpay_refund_id: refund.id,
+            amount_paise: refund.amount,
+            reason: 'razorpay',
+            status: 'pending',
+            idempotency_key: `rzp:${refund.id}`,
+          },
+        },
+        { upsert: true },
+      );
+      return 'processed';
+    }
     case 'refund.processed': {
       const refund = evt.payload.refund?.entity;
       if (!refund) return 'ignored';
-      const row = await Payment.findOne({ razorpay_payment_id: refund.payment_id });
-      if (!row) return 'ignored';
-      row.refunded_paise = Math.min(row.amount_paise, (row.refunded_paise ?? 0) + refund.amount);
-      row.status = row.refunded_paise >= row.amount_paise ? 'refunded' : 'partially_refunded';
-      await row.save();
+      const known = await Payment.exists({ razorpay_payment_id: refund.payment_id });
+      if (!known) return 'ignored';
+      const row = await applyProcessedRefund(refund);
+      if (!row) return 'processed';
+      await Refund.updateOne(
+        { razorpay_refund_id: refund.id },
+        {
+          $set: { status: 'processed', amount_paise: refund.amount },
+          $setOnInsert: {
+            public_id: randomUUID(),
+            user_id: row.user_id,
+            payment_id: row._id,
+            razorpay_payment_id: row.razorpay_payment_id,
+            reason: 'razorpay',
+            idempotency_key: `rzp:${refund.id}`,
+          },
+        },
+        { upsert: true },
+      );
+      await markRefundProcessed(refund.payment_id, refund.id, refund.amount, true);
       const user = await User.findById(row.user_id);
       if (!user) return 'processed';
       if (row.status === 'refunded' && row.period_end && row.period_end.getTime() === user.entitlement?.expires_at?.getTime()) {
@@ -1028,6 +1271,12 @@ async function handleEvent(evt: WebhookPayload) {
       } else {
         await notify(user._id, 'payment_refunded', `${rupees(refund.amount)} has been refunded to your original payment method.`);
       }
+      return 'processed';
+    }
+    case 'refund.failed': {
+      const refund = evt.payload.refund?.entity;
+      if (!refund) return 'ignored';
+      await markRefundProcessed(refund.payment_id, refund.id, refund.amount, false);
       return 'processed';
     }
     case 'payment.dispute.created':

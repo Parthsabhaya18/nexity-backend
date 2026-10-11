@@ -499,6 +499,73 @@ describe('AutoPay', () => {
     expect(unsigned.status).toBe(400);
   });
 
+  it('payment.captured without an order id renews once, and a payment Razorpay did not take does not', async () => {
+    const alice = await signUp('capuser');
+    const { checkout: c, verify } = await buy(alice, { plan: 'plus', autopay: true });
+    const end = new Date(verify.body.subscription.current_period_end).getTime();
+    const renewal = simulateRenewalPayment(c.razorpay.subscription_id, 9900);
+    const event = {
+      event: 'payment.captured',
+      payload: { payment: { entity: renewal } },
+    };
+    expect((await webhook(event, randomUUID())).body.status).toBe('processed');
+    expect((await webhook(event, randomUUID())).body.status).toBe('processed');
+    const after = await me(alice);
+    expect(Math.round((new Date(after.current_period_end).getTime() - end) / 86_400_000)).toBe(30);
+    expect(await Payment.countDocuments({ kind: 'renewal', razorpay_payment_id: renewal.id })).toBe(1);
+
+    const forged = await webhook({
+      event: 'payment.captured',
+      payload: {
+        payment: {
+          entity: { id: 'pay_not_at_razorpay', amount: 9900, currency: 'INR', status: 'captured', order_id: null },
+        },
+        subscription: { entity: { id: c.razorpay.subscription_id, plan_id: 'x', status: 'active' } },
+      },
+    });
+    expect(forged.body.status).toBe('ignored');
+    expect(new Date((await me(alice)).current_period_end).getTime()).toBe(new Date(after.current_period_end).getTime());
+
+    const beforeUpdate = (await me(alice)).current_period_end;
+    simulateSubscriptionStatus(c.razorpay.subscription_id, 'active');
+    const updated = await webhook({
+      event: 'subscription.updated',
+      payload: { subscription: { entity: { id: c.razorpay.subscription_id, plan_id: 'x', status: 'active' } } },
+    });
+    expect(updated.body.status).toBe('processed');
+    expect((await me(alice)).current_period_end).toBe(beforeUpdate);
+  });
+
+  it('the same Razorpay refund id is counted once across different event ids', async () => {
+    const alice = await signUp('refunder');
+    await buy(alice);
+    const pay = await Payment.findOne({ user_id: alice.id });
+    const body = {
+      event: 'refund.processed',
+      payload: {
+        refund: { entity: { id: 'rfnd_same', payment_id: pay!.razorpay_payment_id, amount: pay!.amount_paise } },
+      },
+    };
+    expect((await webhook(body, randomUUID())).body.status).toBe('processed');
+    expect((await webhook(body, randomUUID())).body.status).toBe('processed');
+    const row = await Payment.findOne({ razorpay_payment_id: pay!.razorpay_payment_id });
+    expect(row!.refunded_paise).toBe(pay!.amount_paise);
+    expect(row!.status).toBe('refunded');
+    expect(row!.applied_refund_ids).toEqual(['rfnd_same']);
+    expect(await Notification.countDocuments({ type: 'payment_refunded' })).toBe(1);
+    expect((await me(alice)).plan).toBe('free');
+
+    const unsigned = await request(app)
+      .post('/api/v1/webhooks/razorpay')
+      .set('Content-Type', 'application/json')
+      .set('X-Razorpay-Signature', 'not-a-signature')
+      .send(JSON.stringify(body));
+    expect(unsigned.status).toBe(400);
+    expect((await Payment.findOne({ razorpay_payment_id: pay!.razorpay_payment_id }))!.refunded_paise).toBe(
+      pay!.amount_paise,
+    );
+  });
+
   it('cancel keeps the plan until the end; resume needs only a mandate', async () => {
     const alice = await signUp('alice');
     await buy(alice, { autopay: true });
@@ -549,17 +616,78 @@ describe('upgrades', () => {
     await buy(alice, { autopay: true });
     const q = await api(alice).post('/payments/quote', { plan_id: 'premium', period: 'monthly', autopay: true });
     expect(q.body.kind).toBe('upgrade');
-    // Almost the whole Plus month is unused: ₹99 credit, rounded down to the rupee.
-    expect(q.body.credit_paise).toBe(9800);
-    expect(q.body.amount_paise).toBe(24900 - 9800);
+    // Bought moments ago, so no whole day is consumed and the full ₹99 is credit.
+    expect(q.body.credit_paise).toBe(9900);
+    expect(q.body.amount_paise).toBe(24900 - 9900);
     const up = await buy(alice, { plan: 'premium', autopay: true });
     expect(up.verify.body.subscription.plan).toBe('premium');
     expect(up.verify.body.subscription.billing.price_paise).toBe(24900);
 
-    const down = await api(alice).post('/payments/quote', { plan_id: 'plus', period: 'monthly', autopay: false });
-    expect(down.body.error.code).toBe('PLAN_DOWNGRADE_LATER');
+    const down = await api(alice).post('/payments/change/preview', { plan_id: 'plus', period: 'monthly' });
+    expect(down.status).toBe(200);
+    expect(down.body.kind).toBe('downgrade');
+    expect(down.body.amount_paise).toBe(0);
+    expect(down.body.extra_days).toBeGreaterThan(0);
     const same = await api(alice).post('/payments/quote', { plan_id: 'premium', period: 'monthly', autopay: true });
     expect(same.body.error.code).toBe('ALREADY_ON_PLAN');
+  });
+
+  it('downgrades ₹249 to ₹99 after 8 days of a 31-day period and spends that credit once', async () => {
+    const alice = await signUp('octplan');
+    await buy(alice, { plan: 'premium' });
+    const now = Date.now();
+    const start = new Date(now - 8 * 86_400_000);
+    const end = new Date(start.getTime() + 31 * 86_400_000);
+    await User.updateOne(
+      { _id: alice.id },
+      {
+        $set: {
+          'entitlement.plan': 'premium',
+          'entitlement.period': 'monthly',
+          'entitlement.source': 'razorpay',
+          'entitlement.paid_paise': 24900,
+          'entitlement.price_paise': 24900,
+          'entitlement.period_started_at': start,
+          'entitlement.expires_at': end,
+          'entitlement.autopay': false,
+          'entitlement.credit_hold': null,
+        },
+      },
+    );
+    const preview = await api(alice).post('/payments/change/preview', { plan_id: 'plus', period: 'monthly' });
+    expect(preview.status).toBe(200);
+    expect(preview.body).toMatchObject({
+      kind: 'downgrade',
+      consumed_days: 8,
+      period_days: 31,
+      consumed_paise: 6426,
+      unused_paise: 18474,
+      extra_days: 58,
+      amount_paise: 0,
+    });
+    const body = {
+      plan_id: 'plus' as const,
+      period: 'monthly' as const,
+      expected_amount_paise: 0,
+      expected_extra_days: 58,
+    };
+    const [first, second] = await Promise.all([
+      api(alice).post('/payments/change/confirm', body),
+      api(alice).post('/payments/change/confirm', body),
+    ]);
+    const ok = [first, second].filter((res) => res.status === 200);
+    expect(ok).toHaveLength(1);
+    expect(ok[0]!.body.subscription.plan).toBe('plus');
+    expect([first, second].some((res) => res.status >= 400)).toBe(true);
+
+    const pay = await Payment.findOne({ user_id: alice.id });
+    const refund = await api(alice).post(
+      '/payments/refunds',
+      { payment_id: pay!.razorpay_payment_id, reason: 'Change of mind' },
+      { 'Idempotency-Key': randomUUID() },
+    );
+    expect(refund.status).toBe(202);
+    expect(refund.body.status).toBe('pending');
   });
 
   it('paying again for a one-time plan adds a period after the current one', async () => {
@@ -673,7 +801,9 @@ describe('payment integrity', () => {
       expect(down.status).not.toBe(409);
       await buy(alice, { plan: 'premium' });
       const blocked = await api(alice).post('/payments/quote', { plan_id: 'plus', period: 'monthly', autopay: false });
-      expect(blocked.body.error.code).toBe('PLAN_DOWNGRADE_LATER');
+      expect(blocked.status).toBe(200);
+      expect(blocked.body.kind).toBe('downgrade');
+      expect(blocked.body.amount_paise).toBe(0);
 
       const end = new Date((await me(alice)).current_period_end);
       await runPaymentsJob(new Date(end.getTime() + 1000));

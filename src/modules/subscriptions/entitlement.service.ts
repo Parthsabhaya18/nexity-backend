@@ -178,6 +178,10 @@ export async function subscriptionDto(user: UserDoc) {
             next_charge_at: e.autopay ? iso(e.next_charge_at) : null,
             price_paise: e.price_paise ?? null,
             method_display: e.method_display ?? null,
+            period_started_at: iso(e.period_started_at),
+            days_remaining: ent.expires_at
+              ? Math.max(0, Math.ceil((ent.expires_at.getTime() - Date.now()) / 86_400_000))
+              : null,
           }
         : null,
   };

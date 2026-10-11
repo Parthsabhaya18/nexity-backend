@@ -103,6 +103,8 @@ const paymentSchema = new mongoose.Schema(
       default: 'captured',
     },
     refunded_paise: { type: Number, default: 0 },
+    /** Razorpay refund ids already added into `refunded_paise`. Stops a second event id from counting the same refund. */
+    applied_refund_ids: { type: [String], default: [] },
     /** Plan time this payment bought. */
     period_start: { type: Date, default: null },
     period_end: { type: Date, default: null },
@@ -165,3 +167,67 @@ const razorpayPlanSchema = new mongoose.Schema(
 razorpayPlanSchema.index({ key: 1, mode: 1, amount_paise: 1 }, { unique: true });
 
 export const RazorpayPlan = mongoose.model('RazorpayPlan', razorpayPlanSchema);
+
+/**
+ * One row per time a paid period's unused value is spent.
+ * `credit_key` is unique so the same period cannot fund two plan changes.
+ */
+const billingAdjustmentSchema = new mongoose.Schema(
+  {
+    credit_key: { type: String, required: true },
+    user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    checkout_public_id: { type: String, default: null },
+    reason: { type: String, enum: ['upgrade', 'downgrade'], required: true },
+    from_plan: { type: String, required: true },
+    to_plan: { type: String, required: true },
+    from_period: { type: String, default: null },
+    to_period: { type: String, required: true },
+    period_started_at: { type: Date, required: true },
+    period_days: { type: Number, required: true },
+    consumed_days: { type: Number, required: true },
+    price_paise: { type: Number, required: true },
+    consumed_paise: { type: Number, required: true },
+    unused_paise: { type: Number, required: true },
+    credit_applied_paise: { type: Number, required: true },
+    payable_paise: { type: Number, required: true },
+    extra_days: { type: Number, default: 0 },
+    granted_paise: { type: Number, default: 0 },
+    rounding_adjustment_paise: { type: Number, default: 0 },
+    currency: { type: String, default: 'INR' },
+  },
+  {
+    collection: 'billing_adjustments',
+    timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } as const,
+  },
+);
+
+billingAdjustmentSchema.index({ credit_key: 1 }, { unique: true });
+billingAdjustmentSchema.index({ user_id: 1, created_at: -1 });
+
+export const BillingAdjustment = mongoose.model('BillingAdjustment', billingAdjustmentSchema);
+
+const refundSchema = new mongoose.Schema(
+  {
+    public_id: { type: String, required: true },
+    user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    payment_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment', required: true },
+    razorpay_payment_id: { type: String, required: true },
+    razorpay_refund_id: { type: String, default: null },
+    amount_paise: { type: Number, required: true },
+    reason: { type: String, required: true },
+    /** Request accepted by Razorpay is still `pending` until `refund.processed`. */
+    status: { type: String, enum: ['pending', 'processed', 'failed'], default: 'pending' },
+    idempotency_key: { type: String, required: true },
+  },
+  {
+    collection: 'refunds',
+    timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } as const,
+  },
+);
+
+refundSchema.index({ public_id: 1 }, { unique: true });
+refundSchema.index({ user_id: 1, idempotency_key: 1 }, { unique: true });
+refundSchema.index({ razorpay_payment_id: 1, status: 1 });
+refundSchema.index({ razorpay_refund_id: 1 }, { unique: true, sparse: true });
+
+export const Refund = mongoose.model('Refund', refundSchema);
