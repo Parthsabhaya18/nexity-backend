@@ -3,6 +3,7 @@ import mongoose, { Types } from 'mongoose';
 import { emitToUser, isOnline } from '../../realtime/io';
 import { ApiError } from '../../utils/ApiError';
 import { Follow } from '../follows/follow.model';
+import { isBlockedEither } from '../safety/block.service';
 import { Media } from '../media/media.model';
 import type { MediaKind } from '../media/media.rules';
 import { viewUrl } from '../media/media.storage';
@@ -257,6 +258,16 @@ async function sharedRefs(rows: MessageAttrs[]) {
     ...reels.map((r) => r.author_id),
     ...profileIds.map((id) => new Types.ObjectId(id)),
   ]);
+  const privateAuthors = new Set(
+    (
+      await User.find({
+        _id: { $in: [...posts.map((p) => p.author_id), ...reels.map((r) => r.author_id)] },
+        is_private: true,
+      }).select('_id')
+    ).map((u) => u.id as string),
+  );
+  const exposureOf = (authorId: Types.ObjectId) =>
+    privateAuthors.has(authorId.toHexString()) ? ('private' as const) : ('public' as const);
   const accounts = new Map(
     (profileIds.length
       ? await User.find({ _id: { $in: profileIds } }).select('_id status is_private display_name').lean()
@@ -279,7 +290,7 @@ async function sharedRefs(rows: MessageAttrs[]) {
     ...posts.flatMap((p) =>
       [...(indexes.get(p._id.toString()) ?? [0])].map(async (index) => {
         const shown = p.media[index] ?? p.media[0];
-        const url = shown ? await viewUrl(shown.key) : null;
+        const url = shown ? await viewUrl(shown.key, exposureOf(p.author_id)) : null;
         refs.set(sharedKey('post', p._id.toString(), index), {
           kind: 'post',
           id: p._id.toString(),
@@ -299,8 +310,8 @@ async function sharedRefs(rows: MessageAttrs[]) {
         available: true,
         author: authorOf(r.author_id),
         caption: r.caption ?? '',
-        image_url: r.cover_key ? await viewUrl(r.cover_key) : null,
-        video_url: await viewUrl(r.video_key),
+        image_url: r.cover_key ? await viewUrl(r.cover_key, exposureOf(r.author_id)) : null,
+        video_url: await viewUrl(r.video_key, exposureOf(r.author_id)),
         aspect_ratio: 9 / 16,
       });
     }),
@@ -343,19 +354,27 @@ async function storyRefs(rows: MessageAttrs[]) {
   const live = await Story.find({ _id: { $in: ids }, expires_at: { $gt: new Date() } })
     .select('_id author_id kind key')
     .lean();
+  const privateAuthors = new Set(
+    (
+      await User.find({
+        _id: { $in: live.map((s) => s.author_id) },
+        is_private: true,
+      }).select('_id')
+    ).map((u) => u.id as string),
+  );
   const refs = await Promise.all(
     live.map(async (s): Promise<StoryRef> => ({
       id: s._id.toString(),
       author_id: s.author_id.toString(),
       kind: s.kind,
-      url: await viewUrl(s.key),
+      url: await viewUrl(s.key, privateAuthors.has(s.author_id.toHexString()) ? 'private' : 'public'),
     })),
   );
   return new Map(refs.map((r) => [r.id, r]));
 }
 
 async function freshUrl<T extends MediaSource>(m: T): Promise<T> {
-  return m.provider === 'upload' && m.key ? { ...m, url: await viewUrl(m.key) } : m;
+  return m.provider === 'upload' && m.key ? { ...m, url: await viewUrl(m.key, 'private') } : m;
 }
 
 async function withFreshMediaUrl<
@@ -400,7 +419,7 @@ async function attachableMedia(userId: string, mediaId: string) {
       provider: 'upload' as const,
       media_id: media._id,
       key: media.key,
-      url: await viewUrl(media.key),
+      url: await viewUrl(media.key, 'private'),
       width: media.width ?? null,
       height: media.height ?? null,
       duration_ms: media.duration_ms ?? null,
@@ -551,10 +570,14 @@ export async function openDirectConversation(userId: string, participantId: stri
   }
   const peer = await User.exists({ _id: participantId, status: 'active', is_verified: true });
   if (!peer) throw ApiError.notFound('This account is not available.');
+  if (await isBlockedEither(oid(userId), oid(participantId))) {
+    throw ApiError.forbidden('You cannot message this account.', 'USER_BLOCKED');
+  }
 
   const directKey = directKeyOf(userId, participantId);
   const existing = await Conversation.findOne({ direct_key: directKey }).lean<ConversationAttrs>();
   if (existing) return { conversation: await conversationFor(existing, userId), created: false };
+  await assertPeerAcceptsMessages(userId, oid(participantId));
 
   try {
     const now = new Date();
@@ -812,15 +835,18 @@ export async function listMessages(
  * "Who can message you: People you follow". Once the recipient has written in the chat
  * themselves, the conversation stays open both ways.
  */
-async function assertPeerAcceptsMessages(convo: ConversationAttrs, senderId: string) {
-  if (convo.type !== 'direct') return;
-  const peerId = convo.participant_ids.find((id) => id.toString() !== senderId);
-  if (!peerId) return;
+async function assertPeerAcceptsMessages(
+  senderId: string,
+  peerId: Types.ObjectId,
+  conversationId?: Types.ObjectId,
+) {
   const peer = await User.findById(peerId).select('username message_privacy').lean();
   if (!peer || peer.message_privacy !== 'following') return;
   const [follows, replied] = await Promise.all([
     Follow.exists({ follower_id: peerId, following_id: oid(senderId), status: 'accepted' }),
-    Message.exists({ conversation_id: convo._id, sender_id: peerId }),
+    conversationId
+      ? Message.exists({ conversation_id: conversationId, sender_id: peerId })
+      : false,
   ]);
   if (follows || replied) return;
   throw ApiError.forbidden(
@@ -860,7 +886,11 @@ export async function sendMessage(
   // A retry after a lost response returns the stored message instead of sending it twice.
   const retried = await duplicateOf();
   if (retried) return (await toMessageDtos([retried]))[0]!;
-  await assertPeerAcceptsMessages(convo, userId);
+  const peerId = convo.participant_ids.find((id) => id.toString() !== userId);
+  if (peerId && (await isBlockedEither(oid(userId), peerId))) {
+    throw ApiError.forbidden('You cannot message this account.', 'USER_BLOCKED');
+  }
+  if (peerId) await assertPeerAcceptsMessages(userId, peerId, convo._id);
 
   if (input.reply_to_id) {
     const target = await Message.exists({

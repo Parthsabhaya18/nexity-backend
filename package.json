@@ -21,7 +21,8 @@
     "media:check": "tsx scripts/check-media.ts",
     "seed": "tsx scripts/seed.ts",
     "seed:users": "tsx scripts/seed-test-users.ts",
-    "seed:stories": "tsx scripts/seed-stories.ts"
+    "seed:stories": "tsx scripts/seed-stories.ts",
+    "reset:activity": "tsx scripts/reset-activity.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1146.0",

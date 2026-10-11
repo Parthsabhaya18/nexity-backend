@@ -1,6 +1,6 @@
 import mongoose, { type InferSchemaType, type Types } from 'mongoose';
 
-export const CONVERSATION_TYPES = ['direct', 'group'] as const;
+export const CONVERSATION_TYPES = ['direct'] as const;
 export const MESSAGE_TYPES = [
   'text',
   'image',

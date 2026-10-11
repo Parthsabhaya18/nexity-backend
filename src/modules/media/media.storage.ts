@@ -209,32 +209,38 @@ export async function deleteObjects(keys: string[]): Promise<void> {
   }
 }
 
-/** Under S3's 7-day presign limit. */
-const SIGNED_VIEW_TTL_SECONDS = 6 * 24 * 60 * 60;
-/** Reused for a while so devices can cache the image; renewed long before it expires. */
-const SIGNED_VIEW_REUSE_MS = 6 * 60 * 60 * 1000;
+/** Public posts on a private bucket. Short enough that a forwarded link dies quickly. */
+const PUBLIC_SIGNED_TTL_SECONDS = 60 * 60;
+/** Private accounts, chats and support files. Never a permanent CDN URL. */
+const PRIVATE_SIGNED_TTL_SECONDS = 15 * 60;
+const SIGNED_VIEW_REUSE_MS = 5 * 60 * 1000;
 const SIGNED_VIEW_CACHE_MAX = 10_000;
 const signedViews = new Map<string, { url: string; renewAt: number }>();
 
+export type MediaExposure = 'public' | 'private';
+
 /**
- * URL a device can load the object from: the CDN when `MEDIA_PUBLIC_BASE_URL`
- * is set, otherwise a presigned GET, because the bucket blocks public access.
+ * URL a device can load the object from.
+ * Public media may use `MEDIA_PUBLIC_BASE_URL`. Private media always gets a
+ * short presigned GET, even when that CDN base is set.
  */
-export async function viewUrl(key: string): Promise<string> {
-  if (env.MEDIA_PUBLIC_BASE_URL || !isMediaConfigured) return publicUrl(key);
+export async function viewUrl(key: string, exposure: MediaExposure = 'public'): Promise<string> {
+  if (!isMediaConfigured) return publicUrl(key);
+  if (exposure === 'public' && env.MEDIA_PUBLIC_BASE_URL) return publicUrl(key);
   const now = Date.now();
-  const cached = signedViews.get(key);
+  const cacheKey = `${exposure}:${key}`;
+  const cached = signedViews.get(cacheKey);
   if (cached && cached.renewAt > now) {
-    signedViews.delete(key);
-    signedViews.set(key, cached);
+    signedViews.delete(cacheKey);
+    signedViews.set(cacheKey, cached);
     return cached.url;
   }
 
   const url = await getSignedUrl(s3(), new GetObjectCommand({ Bucket: bucket(), Key: key }), {
-    expiresIn: SIGNED_VIEW_TTL_SECONDS,
+    expiresIn: exposure === 'private' ? PRIVATE_SIGNED_TTL_SECONDS : PUBLIC_SIGNED_TTL_SECONDS,
   });
-  signedViews.delete(key);
-  signedViews.set(key, { url, renewAt: now + SIGNED_VIEW_REUSE_MS });
+  signedViews.delete(cacheKey);
+  signedViews.set(cacheKey, { url, renewAt: now + SIGNED_VIEW_REUSE_MS });
   while (signedViews.size > SIGNED_VIEW_CACHE_MAX) {
     const oldest = signedViews.keys().next().value;
     if (oldest === undefined) break;

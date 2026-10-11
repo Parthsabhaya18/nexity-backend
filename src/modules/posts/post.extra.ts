@@ -3,14 +3,15 @@ import { createHash, randomBytes } from 'node:crypto';
 import { type Types } from 'mongoose';
 
 import { ApiError } from '../../utils/ApiError';
-import { canViewContent, findVisibleUser } from '../follows/follow.service';
+import { MONGO_DUPLICATE_KEY } from '../../utils/mongo';
+import { canViewContent, findVisibleUser, toUserSummaries } from '../follows/follow.service';
 import { Follow } from '../follows/follow.model';
 import { notifyComment } from '../notifications/notification.service';
 import { blockIdsFor, isBlockedEither } from '../safety/block.service';
 import { mutedIdsFor } from '../safety/mute.service';
 import { avatarUrlOf, User, type UserDoc } from '../users/user.model';
 import { extractMentions, MAX_MENTIONS } from './caption';
-import { Comment, PostLike, PostSave } from './post.engage.model';
+import { Comment, CommentLike, PostLike, PostSave } from './post.engage.model';
 import { Post, type PostDoc } from './post.model';
 import { FEED_CURSOR } from './post.schema';
 import { Reel } from '../reels/reel.model';
@@ -312,10 +313,11 @@ export async function listComments(
     _id: { $in: [...page, ...replies].map((c) => c.author_id) },
   });
   const byId = new Map(authors.map((u) => [u.id as string, u]));
+  const liked = await likedCommentIds(viewer, [...page, ...replies].map((c) => c._id));
   const replyOf = (parent: Types.ObjectId) =>
     replies.filter((r) => r.parent_id?.equals(parent));
   return {
-    items: await Promise.all(page.map((c) => commentDto(c, byId, replyOf(c._id)))),
+    items: await Promise.all(page.map((c) => commentDto(c, byId, replyOf(c._id), liked))),
     next_cursor: rows.length > take ? (page[page.length - 1]!.id as string) : null,
   };
 }
@@ -325,13 +327,32 @@ export type CommentShape = {
   body: string;
   author: { id: string; username: string; display_name: string; avatar_url: string | null } | null;
   created_at: string;
+  likes_count: number;
+  liked_by_me: boolean;
   replies: CommentShape[];
 };
 
+type CommentRow = {
+  id: string;
+  author_id: Types.ObjectId;
+  body: string;
+  likes_count?: number;
+  get: (k: string) => unknown;
+};
+
+async function likedCommentIds(viewer: UserDoc, ids: Types.ObjectId[]) {
+  if (ids.length === 0) return new Set<string>();
+  const rows = await CommentLike.find({ user_id: viewer._id, comment_id: { $in: ids } })
+    .select('comment_id')
+    .lean();
+  return new Set(rows.map((r) => String(r.comment_id)));
+}
+
 export async function commentDto(
-  comment: { id: string; author_id: Types.ObjectId; body: string; get: (k: string) => unknown },
+  comment: CommentRow,
   users: Map<string, UserDoc>,
-  replies: { id: string; author_id: Types.ObjectId; body: string; get: (k: string) => unknown }[] = [],
+  replies: CommentRow[] = [],
+  liked: Set<string> = new Set(),
 ): Promise<CommentShape> {
   const author = users.get(comment.author_id.toHexString());
   return {
@@ -346,8 +367,39 @@ export async function commentDto(
         }
       : null,
     created_at: (comment.get('created_at') as Date).toISOString(),
-    replies: await Promise.all(replies.map((r) => commentDto(r, users))),
+    likes_count: comment.likes_count ?? 0,
+    liked_by_me: liked.has(comment.id),
+    replies: await Promise.all(replies.map((r) => commentDto(r, users, [], liked))),
   };
+}
+
+export async function setCommentLike(viewer: UserDoc, commentId: string, on: boolean) {
+  const comment = await Comment.findById(commentId);
+  if (!comment) throw ApiError.notFound('That comment is no longer available.');
+  if (comment.post_id) await visiblePost(viewer, comment.post_id.toHexString());
+  else if (comment.reel_id) {
+    const reel = await Reel.findOne({ _id: comment.reel_id, deleted_at: null });
+    if (!reel) throw ApiError.notFound('That comment is no longer available.');
+  }
+  if (on) {
+    try {
+      await CommentLike.create({ user_id: viewer._id, comment_id: comment._id });
+      comment.likes_count = (comment.likes_count ?? 0) + 1;
+      await comment.save();
+    } catch (err) {
+      if ((err as { code?: number }).code !== MONGO_DUPLICATE_KEY) throw err;
+    }
+  } else {
+    const removed = await CommentLike.findOneAndDelete({
+      user_id: viewer._id,
+      comment_id: comment._id,
+    });
+    if (removed && (comment.likes_count ?? 0) > 0) {
+      comment.likes_count -= 1;
+      await comment.save();
+    }
+  }
+  return { liked: on, likes_count: comment.likes_count ?? 0 };
 }
 
 export async function addComment(
@@ -504,11 +556,12 @@ export async function listLikers(viewer: UserDoc, postId: string, cursor: string
   const page = rows.slice(0, take);
   const users = await User.find({ _id: { $in: page.map((r) => r.user_id) }, status: 'active' });
   const byId = new Map(users.map((u) => [u.id as string, u]));
+  const ordered = page.flatMap((r) => {
+    const u = byId.get(r.user_id.toHexString());
+    return u ? [u] : [];
+  });
   return {
-    items: page.flatMap((r) => {
-      const u = byId.get(r.user_id.toHexString());
-      return u ? [{ id: u.id as string, username: u.username, display_name: u.display_name }] : [];
-    }),
+    items: await toUserSummaries(viewer, ordered),
     next_cursor: rows.length > take ? page[page.length - 1]!._id.toHexString() : null,
   };
 }

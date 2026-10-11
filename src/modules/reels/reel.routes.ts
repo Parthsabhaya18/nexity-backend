@@ -75,6 +75,10 @@ const addComment: RequestHandler = async (req, res) => {
   const { body } = commentBodySchema.parse(req.body);
   res.status(201).json(await reels.addReelComment(req.user!, idParams.parse(req.params).reelId, body));
 };
+const likers: RequestHandler = async (req, res) => {
+  const { cursor, limit } = cursorQuerySchema.parse(req.query);
+  res.json(await reels.listReelLikers(req.user!, idParams.parse(req.params).reelId, cursor, limit));
+};
 
 export const userReels: RequestHandler = async (req, res) => {
   const { userId } = z.object({ userId: objectIdSchema }).parse(req.params);
@@ -95,6 +99,7 @@ reelsRouter.put('/:reelId/like', likeOn);
 reelsRouter.delete('/:reelId/like', likeOff);
 reelsRouter.post('/:reelId/save', save);
 reelsRouter.get('/:reelId/comments', comments);
+reelsRouter.get('/:reelId/likers', likers);
 reelsRouter.post('/:reelId/comments', addComment);
 reelsRouter.get('/:reelId', getOne);
 reelsRouter.patch('/:reelId', update);

@@ -6,6 +6,7 @@ import { nearbyConfig } from '../../config/env';
 import { emitToUser } from '../../realtime/io';
 import { ApiError } from '../../utils/ApiError';
 import { toUserSummaries } from '../follows/follow.service';
+import { entitlementOf } from '../subscriptions/entitlement.service';
 import { User, type UserDoc } from '../users/user.model';
 import { blockedEither, pairKeyOf, recordEncounter } from './nearby.encounters';
 import { NearbyBleSighting, NearbyBleToken, NearbyPresence } from './nearby.models';
@@ -222,7 +223,7 @@ export async function listNearbyUsers(viewer: UserDoc, now = new Date()) {
             avatar_url: card.avatar_url,
           },
           follow_state: card.follow_status,
-          is_premium: user?.entitlement?.plan === 'premium',
+          is_premium: user ? entitlementOf(user).plan !== 'free' : false,
         };
       }),
     refreshed_at: now.toISOString(),

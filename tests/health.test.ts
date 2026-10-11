@@ -2,6 +2,7 @@ import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 
 import { createApp } from '../src/app';
+import { dbTestsOpen } from '../src/modules/health/health.controller';
 
 const app = createApp();
 
@@ -18,6 +19,12 @@ describe('GET /api/v1/health', () => {
     const res = await request(app).get('/api/v1/health/ready');
     expect(res.status).toBe(503);
     expect(res.body.status).toBe('unavailable');
+  });
+
+  it('does not expose db-test in production', () => {
+    expect(dbTestsOpen('production')).toBe(false);
+    expect(dbTestsOpen('test')).toBe(true);
+    expect(dbTestsOpen('development')).toBe(true);
   });
 
   it('returns 503 from db-test while the database is disconnected', async () => {

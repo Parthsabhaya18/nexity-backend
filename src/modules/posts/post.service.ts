@@ -45,7 +45,7 @@ export async function toPostDto(
       post.media.map(async (m) => ({
         id: m.media_id.toHexString(),
         kind: m.kind,
-        url: await viewUrl(m.key),
+        url: await viewUrl(m.key, author.is_private ? 'private' : 'public'),
         width: m.width ?? null,
         height: m.height ?? null,
         alt_text: m.alt_text ?? '',
