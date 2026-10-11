@@ -2,6 +2,7 @@ import { ApiError } from '../../utils/ApiError';
 import type { PlanId, UserDoc } from '../users/user.model';
 import { entitlementOf } from '../subscriptions/entitlement.service';
 import { type Period, PERIOD_MONTHS, periodMs, PLANS, refreshPlans } from '../subscriptions/plans';
+import { consumedWholeDays, creditToDays, DAY_MS, spanDays, unusedCredit, upgradePayable } from './billing';
 import { CouponRedemption, Payment } from './payment.models';
 
 type Coupon = {
@@ -21,7 +22,7 @@ export const COUPONS: Record<string, Coupon> = {
   WELCOME50: { pct: 50, note: '50% off your first subscription', first_purchase_only: true },
 };
 
-export type QuoteKind = 'new' | 'renew' | 'upgrade';
+export type QuoteKind = 'new' | 'renew' | 'upgrade' | 'downgrade';
 
 export type Quote = {
   plan_id: PlanId;
@@ -40,6 +41,18 @@ export type Quote = {
   starts_at: Date;
   ends_at: Date;
   currency: 'INR';
+  /** Whole days of the current paid period already used. 0 when this quote is not a plan change. */
+  consumed_days: number;
+  period_days: number;
+  consumed_paise: number;
+  unused_paise: number;
+  /** Days granted on a downgrade (nearest whole day). 0 for a new purchase or an upgrade that still needs payment. */
+  extra_days: number;
+  /** Paise of plan value created or removed by nearest-day rounding. Positive means the user receives slightly more. */
+  rounding_adjustment_paise: number;
+  /** Paise added so a tiny upgrade still meets Razorpay's ₹1 minimum. */
+  gateway_topup_paise: number;
+  target_period_days: number;
 };
 
 const couponError = (code: string, message: string) => ApiError.badRequest(message, undefined, code);
@@ -66,20 +79,21 @@ async function checkCoupon(user: UserDoc, raw: string, planId: PlanId, period: P
   return { code, ...c };
 }
 
-/**
- * Unused value of the current Razorpay period, rounded down to the rupee. Only paid
- * time counts (a gifted / test plan gives no credit).
- */
-export function upgradeCredit(user: UserDoc, now = new Date()) {
+/** Paid Razorpay time that can be converted once. Gifted and dev plans have no cash value. */
+export function paidWindow(user: UserDoc, now = new Date()) {
   const e = user.entitlement;
-  if (!e || e.source !== 'razorpay' || !e.paid_paise || !e.expires_at || !e.period_started_at) {
-    return 0;
-  }
-  const total = e.expires_at.getTime() - e.period_started_at.getTime();
-  const left = e.expires_at.getTime() - now.getTime();
-  if (total <= 0 || left <= 0) return 0;
-  const raw = Math.floor((e.paid_paise * Math.min(left, total)) / total);
-  return raw - (raw % 100);
+  if (!e || e.source !== 'razorpay' || !e.paid_paise || !e.expires_at || !e.period_started_at) return null;
+  if (e.expires_at.getTime() <= now.getTime()) return null;
+  const periodDays = spanDays(e.period_started_at, e.expires_at);
+  const consumedDays = consumedWholeDays(e.period_started_at, now, periodDays);
+  const credit = unusedCredit(e.paid_paise, periodDays, consumedDays);
+  return {
+    periodDays,
+    consumedDays,
+    consumedPaise: credit.consumedPaise,
+    unusedPaise: credit.unusedPaise,
+    pricePaise: e.price_paise ?? e.paid_paise,
+  };
 }
 
 /** The only place prices are computed (razorpay-payments.md §2). */
@@ -97,49 +111,101 @@ export async function computeQuote(
   const current = PLANS[ent.plan];
   const stored = user.entitlement;
 
+  const months = PERIOD_MONTHS[input.period];
+  const base = plan.pricing[input.period];
+  const window = ent.status === 'active' ? paidWindow(user, now) : null;
+  // Same period length (monthly→monthly) uses the subscription's real span, so a 31-day
+  // October period is not treated as 30 days. A different period uses the plan's own length.
+  const configuredTargetDays = months * 30;
+  const targetPeriodDays =
+    window && stored?.period === input.period ? window.periodDays : configuredTargetDays;
+  const currentPrice = window?.pricePaise ?? 0;
+
   let kind: QuoteKind = 'new';
   let startsAt = now;
+  let consumedDays = 0;
+  let periodDays = 0;
+  let consumedPaise = 0;
+  let unusedPaise = 0;
+  let extraDays = 0;
+  let roundingAdjustment = 0;
   let credit = 0;
-  if (ent.status === 'active') {
-    if (plan.rank < current.rank) {
+  let gatewayTopup = 0;
+  let amount = 0;
+  let coupon: Awaited<ReturnType<typeof checkCoupon>> | null = null;
+
+  const sameSelection = ent.status === 'active' && plan.id === current.id && stored?.period === input.period;
+
+  if (sameSelection) {
+    if (stored?.source === 'razorpay' && stored.autopay && !stored.cancel_at_period_end) {
+      throw ApiError.conflict(`You're already on ${plan.name} with AutoPay.`, 'ALREADY_ON_PLAN');
+    }
+    kind = 'renew';
+    startsAt = ent.expires_at && ent.expires_at > now ? ent.expires_at : now;
+  } else if (window && currentPrice > 0 && base < currentPrice) {
+    kind = 'downgrade';
+    consumedDays = window.consumedDays;
+    periodDays = window.periodDays;
+    consumedPaise = window.consumedPaise;
+    unusedPaise = window.unusedPaise;
+    const converted = creditToDays(unusedPaise, base, targetPeriodDays);
+    extraDays = converted.extraDays;
+    roundingAdjustment = converted.roundingAdjustmentPaise;
+    credit = unusedPaise;
+    if (extraDays < 1) {
       throw ApiError.conflict(
-        `You're on ${current.name} until ${ent.expires_at?.toISOString().slice(0, 10)}. You can switch to ${plan.name} after it ends.`,
-        'PLAN_DOWNGRADE_LATER',
-        { current_plan: current.id, current_period_end: ent.expires_at?.toISOString() ?? null },
+        'This period has no unused value left to move onto a lower plan.',
+        'NO_UNUSED_CREDIT',
       );
     }
-    if (plan.rank === current.rank) {
-      if (stored?.source === 'razorpay' && stored.autopay && !stored.cancel_at_period_end) {
-        throw ApiError.conflict(
-          `You're already on ${plan.name} with AutoPay.`,
-          'ALREADY_ON_PLAN',
-        );
-      }
-      // Paying again for the same plan adds a period after the current one.
-      kind = 'renew';
-      startsAt = ent.expires_at && ent.expires_at > now ? ent.expires_at : now;
-    } else {
-      kind = 'upgrade';
-      credit = upgradeCredit(user, now);
+    amount = 0;
+  } else if (window && currentPrice > 0 && base > currentPrice) {
+    kind = 'upgrade';
+    consumedDays = window.consumedDays;
+    periodDays = window.periodDays;
+    consumedPaise = window.consumedPaise;
+    unusedPaise = window.unusedPaise;
+  } else if (ent.status === 'active' && plan.rank > current.rank) {
+    kind = 'upgrade';
+    if (window) {
+      consumedDays = window.consumedDays;
+      periodDays = window.periodDays;
+      consumedPaise = window.consumedPaise;
+      unusedPaise = window.unusedPaise;
     }
   }
 
-  const months = PERIOD_MONTHS[input.period];
-  const base = plan.pricing[input.period];
+  if (kind !== 'downgrade') {
+    coupon = input.coupon_code ? await checkCoupon(user, input.coupon_code, plan.id, input.period, now) : null;
+    const couponOff = coupon ? Math.floor((base * coupon.pct) / 100) : 0;
+    if (kind === 'upgrade') {
+      const priced = upgradePayable(unusedPaise, base, couponOff);
+      credit = priced.creditPaise;
+      amount = priced.payablePaise;
+      gatewayTopup = priced.gatewayTopupPaise;
+      if (priced.leftoverPaise > 0 && amount === 0) {
+        const converted = creditToDays(priced.leftoverPaise, base, targetPeriodDays);
+        extraDays = converted.extraDays;
+        roundingAdjustment = converted.roundingAdjustmentPaise;
+      }
+    } else {
+      amount = Math.max(100, base - couponOff);
+    }
+  }
+
+  const endsAt =
+    kind === 'downgrade'
+      ? new Date(now.getTime() + extraDays * DAY_MS)
+      : new Date(startsAt.getTime() + periodMs(input.period) + extraDays * DAY_MS);
   const monthlyTotal = plan.pricing.monthly * months;
   const mrp = Math.max(plan.mrp_inr * 100 * months, monthlyTotal);
-  const coupon = input.coupon_code
-    ? await checkCoupon(user, input.coupon_code, plan.id, input.period, now)
-    : null;
   const couponOff = coupon ? Math.floor((base * coupon.pct) / 100) : 0;
-  const amount = Math.max(100, base - couponOff - credit);
-  const endsAt = new Date(startsAt.getTime() + periodMs(input.period));
 
   return {
     plan_id: plan.id,
     period: input.period,
     months,
-    autopay: input.autopay,
+    autopay: kind === 'downgrade' ? false : input.autopay,
     kind,
     mrp_paise: mrp,
     base_paise: base,
@@ -148,12 +214,20 @@ export async function computeQuote(
     coupon: coupon
       ? { code: coupon.code, pct: coupon.pct, off_paise: couponOff, note: coupon.note }
       : null,
-    credit_paise: Math.max(0, Math.min(credit, base - couponOff - 100)),
+    credit_paise: credit,
     amount_paise: amount,
-    renewal_paise: input.autopay ? base : null,
+    renewal_paise: kind === 'downgrade' ? null : input.autopay ? base : null,
     starts_at: startsAt,
     ends_at: endsAt,
     currency: 'INR',
+    consumed_days: consumedDays,
+    period_days: periodDays,
+    consumed_paise: consumedPaise,
+    unused_paise: unusedPaise,
+    extra_days: extraDays,
+    rounding_adjustment_paise: roundingAdjustment,
+    gateway_topup_paise: gatewayTopup,
+    target_period_days: targetPeriodDays,
   };
 }
 

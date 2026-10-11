@@ -19,6 +19,8 @@ export type RzpPayment = {
   notes?: Record<string, string> | null;
   error_description?: string | null;
   amount_refunded?: number;
+  /** Present on subscription charges. Empty for a normal order payment. */
+  invoice_id?: string | null;
 };
 
 export type RzpSubscription = {
@@ -82,11 +84,23 @@ async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Pr
       });
       const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
       if (!res.ok) {
-        const error = json.error as { code?: string; description?: string } | undefined;
-        logger.warn({ path, status: res.status, code: error?.code }, 'Razorpay API error');
+        const error = json.error as { code?: string; description?: string } | string | undefined;
+        const description = typeof error === 'string' ? error : error?.description;
+        const code = typeof error === 'string' ? error : error?.code;
+        logger.warn({ path, status: res.status, code }, 'Razorpay API error');
+        // Orders work with these keys. /plans returns {"error":"Unauthorized"} until
+        // Subscriptions are turned on for the Razorpay account.
+        if (path === '/plans' && res.status === 401) {
+          throw new ApiError(
+            502,
+            'AutoPay is not enabled on this Razorpay account.',
+            undefined,
+            'AUTOPAY_NOT_ENABLED',
+          );
+        }
         throw new ApiError(
           502,
-          error?.description ?? 'The payment provider is unavailable. Try again.',
+          description ?? 'The payment provider is unavailable. Try again.',
           undefined,
           'PAYMENT_PROVIDER_ERROR',
         );
@@ -118,6 +132,7 @@ const sim = {
   payments: new Map<string, RzpPayment>(),
   qrs: new Map<string, SimQr>(),
   plans: new Map<string, { id: string; amount: number }>(),
+  invoices: new Map<string, { id: string; subscription_id: string; payment_id: string }>(),
 };
 
 const simId = (prefix: string) => `${prefix}_sim${randomBytes(7).toString('hex')}`;
@@ -175,6 +190,9 @@ export function simulatePayment(opts: {
       error_description: opts.outcome === 'failure' ? 'Your bank declined the payment (test).' : null,
     });
     if (opts.outcome === 'failure') return { error: p.error_description };
+    const invoiceId = simId('inv');
+    p.invoice_id = invoiceId;
+    sim.invoices.set(invoiceId, { id: invoiceId, subscription_id: s.id, payment_id: p.id });
     s.payments.push(p.id);
     s.status = 'authenticated';
     return {
@@ -211,6 +229,9 @@ export function simulateRenewalPayment(subscriptionId: string, amountPaise: numb
   const s = sim.subscriptions.get(subscriptionId);
   if (!s) throw new Error('unknown simulated subscription');
   const p = simPayment(amountPaise, 'upi', {});
+  const invoiceId = simId('inv');
+  p.invoice_id = invoiceId;
+  sim.invoices.set(invoiceId, { id: invoiceId, subscription_id: subscriptionId, payment_id: p.id });
   s.payments.push(p.id);
   s.status = 'active';
   return p;
@@ -301,6 +322,14 @@ export const gateway = {
     });
   },
 
+  async fetchInvoice(id: string) {
+    if (paymentsMode === 'simulator') return sim.invoices.get(id) ?? null;
+    return call<{ id: string; subscription_id: string | null; payment_id: string | null }>(
+      'GET',
+      `/invoices/${encodeURIComponent(id)}`,
+    );
+  },
+
   async fetchSubscription(id: string): Promise<RzpSubscription | null> {
     if (paymentsMode === 'simulator') return sim.subscriptions.get(id) ?? null;
     return call<RzpSubscription>('GET', `/subscriptions/${encodeURIComponent(id)}`);
@@ -361,12 +390,16 @@ export const gateway = {
     if (paymentsMode === 'simulator') {
       const p = sim.payments.get(paymentId);
       if (p) {
-        p.amount_refunded = amount ?? p.amount;
-        p.status = 'refunded';
+        p.amount_refunded = (p.amount_refunded ?? 0) + (amount ?? p.amount - (p.amount_refunded ?? 0));
+        if ((p.amount_refunded ?? 0) >= p.amount) p.status = 'refunded';
       }
-      return;
+      return { id: `rfnd_${paymentId.slice(0, 20)}`, status: 'pending' as const };
     }
-    await call('POST', `/payments/${encodeURIComponent(paymentId)}/refund`, amount ? { amount } : {});
+    return call<{ id: string; status: string }>(
+      'POST',
+      `/payments/${encodeURIComponent(paymentId)}/refund`,
+      amount ? { amount } : {},
+    );
   },
 };
 

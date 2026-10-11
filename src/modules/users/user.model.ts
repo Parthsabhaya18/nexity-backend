@@ -99,6 +99,10 @@ const userSchema = new mongoose.Schema(
       method_display: { type: String, default: null },
       /** Last expiry reminder sent ("3d:<expires_at>"), so each one goes out once. */
       reminded: { type: String, default: null },
+      /** Checkout id that currently holds this period's unused credit. */
+      credit_hold: { type: String, default: null },
+      /** Bumped each time unused credit is spent, so two plan changes cannot both succeed. */
+      billing_generation: { type: Number, default: 0 },
     },
     /** Opt-in Nearby settings. Never part of any public DTO. */
     nearby: {
