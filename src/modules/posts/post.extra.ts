@@ -5,6 +5,7 @@ import { type Types } from 'mongoose';
 import { ApiError } from '../../utils/ApiError';
 import { MONGO_DUPLICATE_KEY } from '../../utils/mongo';
 import { canViewContent, findVisibleUser, toUserSummaries } from '../follows/follow.service';
+import { planBadgeOf } from '../subscriptions/entitlement.service';
 import { Follow } from '../follows/follow.model';
 import { notifyComment } from '../notifications/notification.service';
 import { blockIdsFor, isBlockedEither } from '../safety/block.service';
@@ -325,7 +326,13 @@ export async function listComments(
 export type CommentShape = {
   id: string;
   body: string;
-  author: { id: string; username: string; display_name: string; avatar_url: string | null } | null;
+  author: {
+    id: string;
+    username: string;
+    display_name: string;
+    avatar_url: string | null;
+    plan_badge: 'plus' | 'premium' | null;
+  } | null;
   created_at: string;
   likes_count: number;
   liked_by_me: boolean;
@@ -364,6 +371,7 @@ export async function commentDto(
           username: author.username,
           display_name: author.display_name,
           avatar_url: await avatarUrlOf(author),
+          plan_badge: planBadgeOf(author),
         }
       : null,
     created_at: (comment.get('created_at') as Date).toISOString(),

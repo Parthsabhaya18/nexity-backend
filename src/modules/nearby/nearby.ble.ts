@@ -221,6 +221,7 @@ export async function listNearbyUsers(viewer: UserDoc, now = new Date()) {
             username: card.username,
             display_name: card.display_name,
             avatar_url: card.avatar_url,
+            plan_badge: card.plan_badge,
           },
           follow_state: card.follow_status,
           is_premium: user ? entitlementOf(user).plan !== 'free' : false,

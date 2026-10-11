@@ -2,6 +2,7 @@ import mongoose, { type Types } from 'mongoose';
 
 import { ApiError } from '../../utils/ApiError';
 import { Follow } from '../follows/follow.model';
+import { planBadgeOf } from '../subscriptions/entitlement.service';
 import { avatarUrlOf, User, type UserDoc } from '../users/user.model';
 import { Block } from './block.model';
 import { MONGO_DUPLICATE_KEY } from '../../utils/mongo';
@@ -104,6 +105,7 @@ export async function listBlocked(
       username: user.username,
       display_name: user.display_name,
       avatar_url: await avatarUrlOf(user),
+      plan_badge: planBadgeOf(user),
     });
   }
   return {
