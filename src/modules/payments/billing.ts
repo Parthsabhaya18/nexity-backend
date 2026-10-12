@@ -22,10 +22,16 @@ export function spanDays(start: Date, end: Date) {
   return Math.max(1, Math.round((end.getTime() - start.getTime()) / DAY_MS));
 }
 
-/** Whole days already elapsed, never more than the billing period. The purchase day counts as day 0. */
+/**
+ * Whole days already elapsed, never more than the billing period.
+ * The purchase day itself is one used day, so a same-day upgrade or downgrade
+ * still consumes one day's price.
+ */
 export function consumedWholeDays(start: Date, now: Date, periodDays: number) {
+  if (now.getTime() < start.getTime() || periodDays <= 0) return 0;
   const elapsed = Math.floor((now.getTime() - start.getTime()) / DAY_MS);
-  return Math.min(periodDays, Math.max(0, elapsed));
+  const used = elapsed < 1 ? 1 : elapsed;
+  return Math.min(periodDays, used);
 }
 
 /**

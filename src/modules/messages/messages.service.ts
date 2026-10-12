@@ -657,6 +657,7 @@ export async function importRevealedSecret(opts: {
         members: [member(senderId), member(recipientId)],
         created_by: recipientId,
         origin: 'secret_message',
+        theme: 'love',
       });
       convo = created.toObject() as ConversationAttrs;
     } catch (err) {
@@ -714,6 +715,7 @@ export async function importRevealedSecret(opts: {
           'members.$[revealer].unread_count': 0,
           'members.$[revealer].hidden': false,
           'members.$[revealed].hidden': false,
+          theme: 'love',
         },
         $inc: {
           message_count: inserted.length,
@@ -724,6 +726,8 @@ export async function importRevealedSecret(opts: {
         arrayFilters: [{ 'revealer.user_id': recipientId }, { 'revealed.user_id': senderId }],
       },
     );
+  } else {
+    await Conversation.updateOne({ _id: convo._id }, { $set: { theme: 'love' } });
   }
   await broadcastConversation(convo._id);
   return convo._id;
