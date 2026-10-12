@@ -684,15 +684,6 @@ describe('upgrades', () => {
     expect(ok).toHaveLength(1);
     expect(ok[0]!.body.subscription.plan).toBe('plus');
     expect([first, second].some((res) => res.status >= 400)).toBe(true);
-
-    const pay = await Payment.findOne({ user_id: alice.id });
-    const refund = await api(alice).post(
-      '/payments/refunds',
-      { payment_id: pay!.razorpay_payment_id, reason: 'Change of mind' },
-      { 'Idempotency-Key': randomUUID() },
-    );
-    expect(refund.status).toBe(202);
-    expect(refund.body.status).toBe('pending');
   });
 
   it('paying again for a one-time plan adds a period after the current one', async () => {

@@ -91,11 +91,11 @@ Checkout ──(Scan QR)──► PayByQr ─► (polls) ─► PurchaseSuccess
 
 **Params:** `{ planId: 'plus' | 'premium' }` (ids only). Rebuilds the prototype checkout.
 
-1. **Order card:** plan icon, "Nexity Premium", "Monthly plan · renews automatically · cancel anytime" (or "One-time · no auto-renew" when AutoPay is off).
+1. **Order card:** plan icon, "Nexity Premium", "Monthly plan · renews automatically · cancel anytime in Subscription & billing".
 2. **Period picker:** Monthly · 3 months (Save 10%) · Yearly (Save 25%) — total and per-month from the server quote.
-3. **AutoPay switch** (default **on**): "Auto-renew with AutoPay — no need to pay again every month. Cancel anytime in Subscription." Off → "Pay once for 1 month / 3 months / 1 year. We'll remind you before it ends."
+3. **No AutoPay switch on Checkout.** A new paid plan always starts with AutoPay on (`autopay: true`). The user turns it off later from Settings → Subscription & billing, which asks for confirmation and shows the date the plan stays active until.
 4. **Coupon:** "Have a coupon code?" + Apply → `POST /payments/quote`. Errors inline ("That code isn't valid or has expired.", "This code is only for your first subscription."). Remove link.
-5. **Price breakdown** (all from `POST /payments/quote`): Plan × months (MRP), Launch discount, Period saving, Coupon, **Total today**. For AutoPay: "Then ₹249 every month from 7 Nov 2026." Fine print: "Inclusive of all taxes."
+5. **Base price** (from `POST /payments/quote`): a price block labeled "Base price" shows the selling price large, with the list price struck through and a save badge whenever MRP is higher. The receipt repeats Base price, then any coupon or plan credit, then **Total today**. For AutoPay: "Then ₹249 every month from 7 Nov 2026." Fine print: "Inclusive of all taxes." Every other screen that shows a plan price uses the same strike treatment.
 6. **Payment method** (radio list — preselects the method in Razorpay; Razorpay shows the actual form):
    - **UPI** — chips Google Pay · PhonePe · Paytm · BHIM (only installed apps are enabled on Android), or "Pay with UPI ID".
    - **Scan QR** — "Pay from another phone or any UPI scanner" (hidden when AutoPay is on, with the note "QR is for one-time payments").
@@ -103,7 +103,7 @@ Checkout ──(Scan QR)──► PayByQr ─► (polls) ─► PurchaseSuccess
    - **Net banking** — all major Indian banks.
    - **Wallet** — Paytm, Amazon Pay, MobiKwik (hidden when AutoPay is on).
 7. **Pay ₹249** button (`premiumGradient` for Premium, `accentGradient` for Plus). Disabled while a request is running. Below it: 🔒 "Secured by Razorpay · 256-bit encryption · We never see your card or bank details."
-8. Links: Terms, Refund policy, Privacy.
+8. Links: Terms, Privacy.
 
 **We never build card, CVV, UPI PIN or bank login fields in our UI.** Razorpay's checkout collects them. (The prototype's own card / UPI fields are demo only.)
 
@@ -167,11 +167,12 @@ Fullscreen, no back gesture: lock ring animation, "Confirming your payment…", 
 ### 3.7 `Subscription` additions for Razorpay
 
 - Rows: "Pays with: **UPI AutoPay · Google Pay**" / "Card •••• 4242 (Visa)" / "Net banking mandate · HDFC" (masked values from Razorpay only), "Next charge ₹249 on 7 Nov 2026".
-- **Cancel AutoPay** → confirm "You'll keep Premium until 7 Nov 2026. After that you'll move to Free and lose access to Secret features." → `POST /subscriptions/me/cancel`. Chip becomes "Ends soon".
+- Under the plan name: while AutoPay is on, "Your plan renews on 7 Nov 2026." After cancel, "You can use this until 7 Nov 2026. After that it cancels."
+- **Cancel plan** (no separate AutoPay off button) → confirmation popup titled "Cancel plan?" with the expiry date prominent ("You can keep using it until 7 Nov 2026"). Copy says the plan stays usable until that date even after cancel, and AutoPay turns off so the next bill is not charged. Confirm calls `POST /subscriptions/me/cancel`.
 - **Turn AutoPay back on** → new checkout that starts on `current_period_end` (no charge today, only a mandate approval).
 - **Change payment method** → `POST /subscriptions/me/payment-method` → opens Razorpay's hosted authorisation link for a new mandate.
 - **Upgrade / change period** → `Checkout` with the new plan (§5.4).
-- **Billing history** with **Download invoice** (PDF, GST).
+- **Billing history** lists past payments. Users cannot request a refund from the app.
 - One-time plan (no AutoPay): "Active until 7 Nov 2026 · doesn't renew" + **Renew / Turn on AutoPay**.
 
 ---
@@ -307,7 +308,7 @@ Status for polling: `{ id, status: 'created' | 'pending' | 'paid' | 'failed' | '
 
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/subscriptions/me/cancel` | Cancel AutoPay at cycle end |
+| POST | `/subscriptions/me/cancel` | Cancel the plan at cycle end (turns AutoPay off; access lasts until `current_period_end`) |
 | POST | `/subscriptions/me/resume` | Returns a new checkout (mandate only) |
 | POST | `/subscriptions/me/payment-method` | Returns Razorpay's hosted authorisation `short_url` for a new mandate; the old subscription is cancelled at cycle end once the new one is authenticated |
 | POST | `/subscriptions/me/change` | `{ plan_id, period }` → checkout with the pro-rated upfront (§5.4) |
@@ -431,7 +432,7 @@ Test mode (`rzp_test_…`) in development and staging, live keys only in product
 
 ### 10.5 Legal & compliance
 
-- Refund policy, Terms and the auto-renew terms are linked on `Checkout`. AutoPay consent text is shown before paying.
+- Terms and Privacy are linked on `Checkout`. A new plan always starts with AutoPay. Canceling later is done from Subscription & billing.
 - GST invoices for every payment (Razorpay invoices or our own PDF with Nexity's GSTIN).
 - RBI e-mandate rules (pre-debit notification, easy cancel) are covered by Razorpay + our `Subscription` screen.
 - Privacy policy and Play Data safety: "Purchase history" and "Payment info (processed by Razorpay)".
