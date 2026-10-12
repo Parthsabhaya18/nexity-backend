@@ -26,7 +26,7 @@ import {
   simulate,
   verify,
 } from './payments.service';
-import { confirmPlanChange, previewPlanChange, requestRefund } from './planChange.service';
+import { confirmPlanChange, previewPlanChange } from './planChange.service';
 import { quoteDto } from './quote';
 
 const planInput = z
@@ -127,18 +127,6 @@ paymentsRouter.post('/change/confirm', paymentCheckoutLimiter, async (req, res) 
     })
     .parse(req.body);
   res.json(await confirmPlanChange(req.user!, body));
-});
-
-paymentsRouter.post('/refunds', paymentCheckoutLimiter, async (req, res) => {
-  const body = z
-    .object({
-      payment_id: z.string().min(4).max(64),
-      amount_paise: z.number().int().positive().optional(),
-      reason: z.string().trim().min(3).max(300),
-    })
-    .strict()
-    .parse(req.body);
-  res.status(202).json(await requestRefund(req.user!, body, idempotencyKey(req)));
 });
 
 /** Simulator only (404 with real keys): stands in for Razorpay's checkout sheet. */

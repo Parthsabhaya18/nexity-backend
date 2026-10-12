@@ -7,7 +7,7 @@ import { MONGO_DUPLICATE_KEY } from '../../utils/mongo';
 import { syncCrushes } from '../secret-crush/crush.service';
 import { subscriptionDto } from '../subscriptions/entitlement.service';
 import { type PlanId, User, type UserDoc } from '../users/user.model';
-import { BillingAdjustment, Payment, Refund } from './payment.models';
+import { BillingAdjustment, Refund } from './payment.models';
 import { gateway } from './razorpay.gateway';
 import { computeQuote, quoteDto, type Quote } from './quote';
 
@@ -155,97 +155,6 @@ export async function confirmPlanChange(
   const dto = await subscriptionDto(fresh);
   emitToUser(fresh.id as string, 'subscription.updated', dto);
   return { subscription: dto, quote: quoteDto(quote) };
-}
-
-export async function requestRefund(
-  user: UserDoc,
-  input: { payment_id: string; amount_paise?: number; reason: string },
-  idempotencyKey: string,
-) {
-  const existing = await Refund.findOne({ user_id: user._id, idempotency_key: idempotencyKey });
-  if (existing) {
-    return refundDto(existing);
-  }
-  const payment = await Payment.findOne({ razorpay_payment_id: input.payment_id, user_id: user._id });
-  if (!payment) throw ApiError.notFound('That payment was not found.');
-  if (payment.status === 'refunded') {
-    throw ApiError.conflict('This payment is already refunded.', 'REFUND_NOT_AVAILABLE');
-  }
-  const already = payment.refunded_paise ?? 0;
-  const remaining = payment.amount_paise - already;
-  if (remaining <= 0) {
-    throw ApiError.conflict('This payment is already refunded.', 'REFUND_NOT_AVAILABLE');
-  }
-  const amount = input.amount_paise ?? remaining;
-  if (!Number.isInteger(amount) || amount < 100 || amount > remaining) {
-    throw ApiError.badRequest('That refund amount is not available for this payment.', undefined, 'REFUND_AMOUNT_INVALID');
-  }
-  if (payment.period_start) {
-    const spent = await BillingAdjustment.exists({
-      user_id: user._id,
-      period_started_at: payment.period_start,
-    });
-    if (spent) {
-      throw ApiError.conflict(
-        'This payment was already converted into plan time. A downgrade is not a cash refund.',
-        'CREDIT_ALREADY_USED',
-      );
-    }
-  }
-  const open = await Refund.findOne({
-    razorpay_payment_id: payment.razorpay_payment_id,
-    status: 'pending',
-  });
-  if (open) {
-    throw ApiError.conflict('A refund for this payment is already in progress.', 'REFUND_IN_PROGRESS');
-  }
-
-  let provider: { id?: string } = {};
-  try {
-    provider = (await gateway.refund(payment.razorpay_payment_id, amount)) ?? {};
-  } catch (err) {
-    logger.error({ err, payment: payment.razorpay_payment_id }, 'Razorpay refund request failed');
-    throw new ApiError(502, "The refund could not be started. You have not been marked as refunded.", undefined, 'PAYMENT_PROVIDER_ERROR');
-  }
-
-  try {
-    const row = await Refund.create({
-      public_id: randomUUID(),
-      user_id: user._id,
-      payment_id: payment._id,
-      razorpay_payment_id: payment.razorpay_payment_id,
-      razorpay_refund_id: provider.id ?? null,
-      amount_paise: amount,
-      reason: input.reason,
-      status: 'pending',
-      idempotency_key: idempotencyKey,
-    });
-    return refundDto(row);
-  } catch (err) {
-    if (!isDuplicate(err)) throw err;
-    const row = await Refund.findOne({ user_id: user._id, idempotency_key: idempotencyKey });
-    return refundDto(row!);
-  }
-}
-
-function refundDto(row: {
-  public_id: string;
-  razorpay_payment_id: string;
-  razorpay_refund_id?: string | null;
-  amount_paise: number;
-  reason: string;
-  status: string;
-  created_at?: Date;
-}) {
-  return {
-    id: row.public_id,
-    payment_id: row.razorpay_payment_id,
-    refund_id: row.razorpay_refund_id ?? null,
-    amount_paise: row.amount_paise,
-    reason: row.reason,
-    status: row.status,
-    created_at: row.created_at ? row.created_at.toISOString() : null,
-  };
 }
 
 export async function markRefundProcessed(razorpayPaymentId: string, refundId: string, amountPaise: number, ok: boolean) {
