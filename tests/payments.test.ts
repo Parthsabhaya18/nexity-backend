@@ -621,9 +621,10 @@ describe('upgrades', () => {
     await buy(alice, { autopay: true });
     const q = await api(alice).post('/payments/quote', { plan_id: 'premium', period: 'monthly', autopay: true });
     expect(q.body.kind).toBe('upgrade');
-    // Bought moments ago, so no whole day is consumed and the full ₹99 is credit.
-    expect(q.body.credit_paise).toBe(9900);
-    expect(q.body.amount_paise).toBe(24900 - 9900);
+    // Bought today, so one day of Plus is already used and the rest is credit.
+    expect(q.body.consumed_days).toBe(1);
+    expect(q.body.credit_paise).toBe(9900 - 330);
+    expect(q.body.amount_paise).toBe(24900 - (9900 - 330));
     const up = await buy(alice, { plan: 'premium', autopay: true });
     expect(up.verify.body.subscription.plan).toBe('premium');
     expect(up.verify.body.subscription.billing.price_paise).toBe(24900);

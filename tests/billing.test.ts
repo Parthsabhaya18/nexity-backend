@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { creditToDays, divNearest, unusedCredit, upgradePayable } from '../src/modules/payments/billing';
+import { consumedWholeDays, creditToDays, divNearest, unusedCredit, upgradePayable } from '../src/modules/payments/billing';
 
 describe('subscription credit math', () => {
   it('rounds half up and keeps 57.34 on 57', () => {
@@ -17,6 +17,23 @@ describe('subscription credit math', () => {
     expect(days.extraDays).toBe(58);
     expect(days.roundingAdjustmentPaise).not.toBe(0);
     expect(days.grantedPaise - credit.unusedPaise).toBe(days.roundingAdjustmentPaise);
+  });
+
+  it('cuts one day of ₹249 over a 31-day period when the plan changes the same day', () => {
+    const start = new Date('2026-10-12T08:00:00.000Z');
+    const sameDay = new Date('2026-10-12T20:00:00.000Z');
+    expect(consumedWholeDays(start, sameDay, 31)).toBe(1);
+    const credit = unusedCredit(24900, 31, 1);
+    expect(credit.consumedPaise).toBe(803);
+    expect(credit.unusedPaise).toBe(24900 - 803);
+  });
+
+  it('cuts one day of the current plan on a same-day upgrade', () => {
+    const credit = unusedCredit(9900, 31, consumedWholeDays(new Date(), new Date(), 31));
+    expect(credit.consumedPaise).toBe(319);
+    const priced = upgradePayable(credit.unusedPaise, 24900, 0);
+    expect(priced.creditPaise).toBe(9900 - 319);
+    expect(priced.payablePaise).toBe(24900 - (9900 - 319));
   });
 
   it('charges only the difference when upgrading ₹99 to ₹249 after 8 days', () => {
