@@ -35,6 +35,6 @@ Horizontal list of followed users with active stories; "+" for own story.
 
 ## Acceptance criteria
 
-- [ ] Expired stories disappear from tray within 60 s of expiry (refetch on pull-to-refresh, app foreground, and every 60 s while visible).
+- [x] Expired stories disappear from the tray within 60 s of expiry (checked every minute on the device against `expires_at`, plus pull-to-refresh).
 - [ ] Ring turns gray immediately after viewing (optimistic).
 - [ ] Prefetch the first story image of the first few users for instant open.

@@ -23,7 +23,6 @@ Every deep-link path below works with both prefixes:
 | `notifications` | `Notifications` | — | Yes |
 | `posts/:postId` | `PostDetail` | `postId` | Yes |
 | `posts/:postId/comments` | `PostDetail` + Comments sheet open | `postId` | Yes |
-| `tags/:tag` | `HashtagFeed` | `tag` | Yes |
 | `saved` | `SavedPosts` | — | Yes |
 | `reels` | `Reels` (ReelsTab) | — | Yes |
 | `reels/:reelId` | `ReelDetail` | `reelId` | Yes |
@@ -44,8 +43,17 @@ Every deep-link path below works with both prefixes:
 | `settings/notifications` | `NotificationSettings` | — | Yes |
 | `settings/privacy` | `PrivacySettings` | — | Yes |
 | `settings/account` | `AccountSettings` | — | Yes |
+| `settings/subscription` | `Subscription` | — | Yes |
+| `settings/nearby` | `NearbySettings` | — | Yes |
+| `nearby` | `Nearby` | — | Yes |
+| `premium` | `Premium` (PremiumTab) | — | Yes |
+| `premium/messages` | `Premium` | `section=messages` | Yes |
+| `premium/crush` | `Premium` | `section=crush` | Yes |
+| `premium/plans` | `Plans` | `reason?` | Yes |
+| `secret/messages/:threadId` | `SecretThread` | `threadId` | Yes |
+| `secret/matches/:matchId` | `MatchCelebration` | `matchId` | Yes |
 
-Screens **without** a deep link (only reached in-app): `VerifyEmail` and `ResetPassword` (email codes, not links), `ForgotPassword`, onboarding screens, `EditPost`, `EditReel`, `EditProfile`, `NewMessage`, `CreateGroup`, `BlockedAccounts`, `AdminModeration`, all bottom sheets.
+Screens **without** a deep link (only reached in-app): `VerifyEmail` and `ResetPassword` (email codes, not links), `ForgotPassword`, onboarding screens, `EditPost`, `EditReel`, `EditProfile`, `NewMessage`, `CreateGroup`, `BlockedAccounts`, `AdminModeration`, `DevComponents` (debug builds only), `SecretCompose`, `SecretPeoplePicker`, `PurchaseSuccess`, all bottom sheets.
 
 ### Rules
 
@@ -81,8 +89,11 @@ Base: **`/api/v1`** (dev `http://localhost:4000/api/v1`, prod `https://api.nexit
 Authorization: Bearer <access_token>
 X-Platform: ios | android
 X-App-Version: 1.0.0
+X-Timezone: Asia/Kolkata
 Accept-Language: en-IN
 ```
+
+`X-Timezone` is the device's IANA time zone. The server uses it for calendar-day rules such as the Nearby "today / yesterday" hint ([nearby-encounters.md §10](../modules/nearby/nearby-encounters.md#10-date-and-time-logic)).
 
 ### Query parameters (common)
 
@@ -116,7 +127,8 @@ Show `message` to the user; branch on `code` in code.
 
 ## WebSocket (messages)
 
-- URL: `wss://api.nexity.com/ws/v1/chat` (dev `ws://localhost:4000/ws/v1/chat`).
-- Authenticate with the access token in the first message (`{ "type": "auth", "token": "..." }`) — custom headers are unreliable on React Native WebSocket.
-- Reconnect with backoff and on app foreground; close when the app is backgrounded for > 30 s (push takes over).
+- Transport: **Socket.IO v4** (`socket.io` on the server, `socket.io-client` in the app, `transports: ['websocket']`), served on the API host at path **`/ws/v1/chat`** (prod `https://api.nexity.com`, dev `http://localhost:4000`).
+- Authenticate with the access token in the Socket.IO handshake: `io(origin, { path: '/ws/v1/chat', auth: { token } })` — custom headers are unreliable on React Native. On `connect_error` with an auth code, refresh the token and reconnect.
+- Reconnect with backoff and on app foreground, then fetch missed messages (`?after=`); close when the app is backgrounded for > 30 s (push takes over).
+- One server instance keeps presence and rooms in memory; running several instances needs the Socket.IO Redis adapter.
 - Events documented in [chat-thread.md](../modules/messages/chat-thread.md).

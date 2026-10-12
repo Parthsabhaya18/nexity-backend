@@ -24,19 +24,28 @@ export interface TokenPair {
 
 export const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 
-export function signAccessToken(userId: string) {
-  return jwt.sign({ typ: 'access' }, jwtAccessSecret, {
+/** `sid` is the refresh token family, so a request knows which device session it belongs to. */
+export function signAccessToken(userId: string, sessionId: string) {
+  return jwt.sign({ typ: 'access', sid: sessionId }, jwtAccessSecret, {
     subject: userId,
     expiresIn: env.ACCESS_TOKEN_TTL_SECONDS,
   });
 }
 
 /** Returns the user id, or throws `TOKEN_EXPIRED` / `UNAUTHORIZED`. */
-export function verifyAccessToken(token: string): { userId: string; issuedAt: number } {
+export function verifyAccessToken(token: string): {
+  userId: string;
+  issuedAt: number;
+  sessionId: string | null;
+} {
   try {
     const payload = jwt.verify(token, jwtAccessSecret) as jwt.JwtPayload;
     if (payload.typ !== 'access' || !payload.sub) throw new Error('wrong token type');
-    return { userId: payload.sub, issuedAt: (payload.iat ?? 0) * 1000 };
+    return {
+      userId: payload.sub,
+      issuedAt: (payload.iat ?? 0) * 1000,
+      sessionId: typeof payload.sid === 'string' ? payload.sid : null,
+    };
   } catch (err) {
     if (err instanceof jwt.TokenExpiredError) {
       throw ApiError.unauthorized('Session expired', 'TOKEN_EXPIRED');
@@ -65,9 +74,10 @@ async function createRefreshToken(
 
 /** Starts a new device session (new refresh token family). */
 export async function issueTokenPair(userId: string, device: DeviceInfo): Promise<TokenPair> {
-  const refresh = await createRefreshToken(userId, randomUUID(), device);
+  const familyId = randomUUID();
+  const refresh = await createRefreshToken(userId, familyId, device);
   return {
-    access_token: signAccessToken(userId),
+    access_token: signAccessToken(userId, familyId),
     refresh_token: refresh,
     expires_in: env.ACCESS_TOKEN_TTL_SECONDS,
   };
@@ -107,7 +117,7 @@ export async function rotateRefreshToken(token: string, device: DeviceInfo) {
   return {
     userId,
     tokens: {
-      access_token: signAccessToken(userId),
+      access_token: signAccessToken(userId, current.family_id),
       refresh_token: refresh,
       expires_in: env.ACCESS_TOKEN_TTL_SECONDS,
     } satisfies TokenPair,
@@ -123,11 +133,41 @@ export async function revokeRefreshFamily(token: string) {
   );
 }
 
-export async function revokeAllUserTokens(userId: Types.ObjectId | string) {
+export async function revokeAllUserTokens(
+  userId: Types.ObjectId | string,
+  { exceptFamily }: { exceptFamily?: string | null } = {},
+) {
   await RefreshToken.updateMany(
-    { user_id: userId, revoked_at: null },
+    {
+      user_id: userId,
+      revoked_at: null,
+      ...(exceptFamily ? { family_id: { $ne: exceptFamily } } : {}),
+    },
     { $set: { revoked_at: new Date() } },
   );
+}
+
+/** Signed-in devices: one row per refresh token family that still has a live token. */
+export async function listSessions(userId: Types.ObjectId | string) {
+  const rows = await RefreshToken.find({
+    user_id: userId,
+    revoked_at: null,
+    expires_at: { $gt: new Date() },
+  })
+    .sort({ last_used_at: -1 })
+    .lean();
+  const byFamily = new Map<string, (typeof rows)[number]>();
+  for (const row of rows) if (!byFamily.has(row.family_id)) byFamily.set(row.family_id, row);
+  return [...byFamily.values()];
+}
+
+/** Returns false when the session doesn't exist or isn't this user's. */
+export async function revokeSession(userId: Types.ObjectId | string, familyId: string) {
+  const res = await RefreshToken.updateMany(
+    { user_id: userId, family_id: familyId, revoked_at: null },
+    { $set: { revoked_at: new Date() } },
+  );
+  return res.modifiedCount > 0;
 }
 
 /** Short-lived token proving the reset code was entered. Bound to the current password version. */

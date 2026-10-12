@@ -5,7 +5,7 @@
 **Theme:** Video/trim/cover steps always dark; details step follows dark & light — [THEMING.md](../../architecture/THEMING.md)  
 **Auth required:** Yes  
 **UX reference:** [INSTAGRAM_CONTENT_UX.md](../../architecture/INSTAGRAM_CONTENT_UX.md) — Reels  
-**Media:** [CLOUDINARY.md](../../architecture/CLOUDINARY.md) · **Platform:** [MOBILE_APP.md](../../architecture/MOBILE_APP.md#media-capture-pick-play)
+**Media:** [MEDIA_STORAGE.md](../../architecture/MEDIA_STORAGE.md) · **Platform:** [MOBILE_APP.md](../../architecture/MOBILE_APP.md#media-capture-pick-play)
 
 ## Purpose
 
@@ -13,9 +13,11 @@ Instagram-style Reels publish flow: video → trim/cover → caption & tags → 
 
 Opened from the **Create (+)** tab sheet → **Reel**, or the camera icon on the Reels tab.
 
+`CreateReel` opens on a **full-screen camera** (tap to start / stop recording, flash, switch camera, gallery thumbnail, Post / Reel tabs). The gallery shows recent videos with their length; anything over **2 minutes** is dimmed and refused. After you pick a clip: trim, original-audio mute (`audio_muted`), a description with `@mention` autocomplete (up to 5 suggestions, no hashtags), location (shown as a removable chip), and **Hide like count** / **Turn off commenting** ON / OFF switches (`hide_like_count`, `comments_disabled`). There is no music and no colour filter. **Share** uploads to S3 in a progress dialog with **Cancel**, then opens the Reels tab on the new reel. Viewers cannot unmute a reel the author muted. There is no cover picker: the app always sends `cover_time_ms` = the trim start, so the cover is the first frame of the clip (the API still accepts `cover_media_id` for older reels). The profile grid seeks to that frame.
+
 ## UI steps (IG order)
 
-1. **Video (`CreateReelVideo`)** — fullscreen camera (`react-native-vision-camera`) with record button (hold or tap), front/back flip, flash, 15 / 30 / 60 / 90 s length selector; gallery thumbnail bottom-left opens videos-only picker. Max **90 seconds**.
+1. **Video (`CreateReelVideo`)** — fullscreen camera (`react-native-vision-camera`) with record button (hold or tap), front/back flip, flash, recording stops automatically at 2 minutes; gallery thumbnail bottom-left opens videos-only picker. Max **2 minutes**.
    - Permissions: camera + microphone requested when this screen opens; photo library when the gallery is opened. Denied → explainer with **Open Settings**.
 2. **Edit (`CreateReelEdit`)** — trim timeline with frame thumbnails; scrub **cover photo** (frame) or pick a cover image from the gallery. Preview loops.
 3. **Details (`CreateReelDetails`)** — cover preview, caption, tag people, location, visibility.
@@ -25,7 +27,7 @@ Leaving with a recorded/selected video → **Save draft** / **Discard** (draft i
 
 ## Cloudinary
 
-1. Check duration (≤ 90 s) and size (≤ 100 MB) on the device.
+1. The video is compressed on the device to 1080p, then must be at most **200 MB** (checked before upload and by the API and S3, `MEDIA_TOO_LARGE`; see [MEDIA_STORAGE.md](../../architecture/MEDIA_STORAGE.md)). Videos longer than 2 minutes are refused with "Reels can be up to 2 minutes. Choose a shorter video." (device and `MEDIA_TOO_LONG` from the API).
 2. Sign + upload **main video** (`purpose: "reel"`, `resource_type: "video"`) — chunked upload for files > 20 MB.
 3. Confirm → `video_media_id`.
 4. Cover: either a frame offset (server generates thumbnail with `so_<seconds>`) OR upload cover image (`purpose: "reel"`, image) → `thumbnail_media_id`.
@@ -58,7 +60,7 @@ Wait for `media.status === "ready"` if video processing is async (poll `GET /med
 
 ## Acceptance criteria
 
-- [ ] Reject video > 90 s before upload.
+- [x] Reject video > 2 min before upload (device + `MEDIA_TOO_LONG` from the API).
 - [ ] Recording works with front and back camera on iOS and Android; audio is recorded.
 - [ ] Cover visible on profile reels grid (3-column).
 - [ ] Viewer uses Cloudinary streaming URL for playback.

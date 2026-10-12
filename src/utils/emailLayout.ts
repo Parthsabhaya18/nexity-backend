@@ -1,6 +1,9 @@
 import { NEXITY_LOGO_PNG_BASE64 } from './emailLogo';
 
-const LOGO_CID = 'nexity-logo';
+export const LOGO_CID = 'nexity-logo';
+/** Served by the API for mail providers that can't embed inline (cid) images. */
+export const EMAIL_LOGO_PATH = '/email/nexity-logo.png';
+export const emailLogoPng = () => Buffer.from(NEXITY_LOGO_PNG_BASE64, 'base64');
 
 /** Calm palette from THEMING.md; fixed so emails look the same in every client. */
 const c = {

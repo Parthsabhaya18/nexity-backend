@@ -38,7 +38,7 @@ Returns recommended users based on interests.
 
 ### Avatar upload
 
-Use Cloudinary flow from the device: `cloudinary-sign` (`purpose: avatar`) → upload → `confirm` → `PATCH /users/me` with `{ "avatar_media_id": "uuid" }`. Resize to 640×640 on device before upload.
+Upload from the device with `useMediaUpload('avatar')` (S3, see [MEDIA_STORAGE.md](../../architecture/MEDIA_STORAGE.md)), then `PATCH /users/me` with `{ "avatar_media_id": "<media id>" }` — same flow as [edit-profile.md](../profile/edit-profile.md). Images are resized to at most 640 px on the device.
 
 ## Acceptance criteria
 

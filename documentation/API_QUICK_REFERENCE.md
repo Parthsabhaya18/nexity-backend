@@ -57,8 +57,11 @@ In development without SMTP, code-sending responses also include `dev_code`.
 | DELETE | `/users/:id/follow` |
 | POST | `/users/:id/block` |
 | DELETE | `/users/:id/block` |
+| POST | `/users/:id/mute` (`204`, idempotent; `400 CANNOT_MUTE_SELF`, `404` unknown user; the profile returns `muted`. Feeds filtering muted accounts via `mutedIdsFor()` comes with the feed work) |
+| DELETE | `/users/:id/mute` (`204`) |
 | GET | `/users/me/follow-requests` |
-| GET | `/users/search` |
+| DELETE | `/users/me/followers/:userId` (remove follower) |
+| GET | `/users/search` (planned for New message; app search uses `/search?type=users`) |
 
 ## Feed & explore
 
@@ -66,14 +69,49 @@ In development without SMTP, code-sending responses also include `dev_code`.
 |--------|------|
 | GET | `/feed` |
 | GET | `/explore` |
-| GET | `/search` |
+| GET | `/search` (`type=users` or `places`; blocked users never appear) |
+| GET | `/search/history` (recent profiles opened from Search) |
+| POST | `/search/history` (`{ user_id }`) |
+| DELETE | `/search/history` (clear all) |
+| DELETE | `/search/history/:userId` |
 
 ## Posts
 
 | Method | Path |
 |--------|------|
-| POST | `/posts` |
-| GET | `/posts/:id` |
+| POST | `/posts` (implemented; `201`, or `200` when `client_upload_id` repeats) |
+| GET | `/posts/:id` (implemented) |
+| PATCH | `/posts/:id` (caption, location, alt text, like/comment settings) |
+| DELETE | `/posts/:id` (soft delete) |
+| POST | `/posts/:id/like` (toggle) |
+| PUT | `/posts/:id/like` (like, idempotent; returns `{ liked, likes_count, post }`) |
+| DELETE | `/posts/:id/like` (unlike, idempotent) |
+| POST | `/posts/:id/save` (toggle) |
+| GET | `/posts/:id/comments` |
+| POST | `/posts/:id/comments` |
+| DELETE | `/comments/:id` |
+| GET | `/feed` |
+| GET | `/users/me/saved-posts` |
+| GET | `/users/:id/posts` |
+| POST | `/stories` |
+| GET | `/stories/tray` |
+| POST | `/stories/:id/view` |
+| POST | `/stories/:id/vote` |
+| POST | `/stories/:id/reply` |
+| PUT | `/stories/:id/like` |
+| DELETE | `/stories/:id/like` |
+| POST | `/stories/:id/message` (private reply to the author, sent as a DM with `story_id`; returns `{ id, conversation_id }`) |
+| GET | `/stories/:id/viewers` (owner only; `liked` per row, likers first) |
+| DELETE | `/stories/:id` |
+| POST | `/reels` |
+| GET | `/reels` |
+| GET | `/users/:id/reels` |
+| POST | `/reels/:id/like` |
+| PUT | `/reels/:id/like` (idempotent, returns the reel) |
+| DELETE | `/reels/:id/like` |
+| PATCH | `/reels/:id` (caption, `hide_like_count`, `comments_disabled`) |
+| DELETE | `/reels/:id` |
+| PATCH | `/users/me/preferences` (`theme`, `mood`) |
 | PATCH | `/posts/:id` |
 | DELETE | `/posts/:id` |
 | POST | `/posts/:id/like` |
@@ -81,7 +119,6 @@ In development without SMTP, code-sending responses also include `dev_code`.
 | GET | `/posts/:id/comments` |
 | POST | `/posts/:id/comments` |
 | GET | `/users/me/saved-posts` |
-| GET | `/tags/:tag/posts` |
 
 ## Reels
 
@@ -103,16 +140,26 @@ In development without SMTP, code-sending responses also include `dev_code`.
 | POST | `/stories` |
 | GET | `/users/:id/stories` |
 | POST | `/stories/:id/view` |
+| POST | `/stories/:id/vote` |
+| POST | `/stories/:id/reply` |
 
 ## Messages
+
+Implemented ([chat-thread.md](modules/messages/chat-thread.md)). `GET /users/search?q=` is implemented too (people picker; empty `q` returns suggestions).
 
 | Method | Path |
 |--------|------|
 | GET | `/conversations` |
 | POST | `/conversations` |
+| GET | `/conversations/:id` |
 | GET | `/conversations/:id/messages` |
 | POST | `/conversations/:id/messages` |
 | POST | `/conversations/:id/read` |
+| DELETE | `/conversations/:id/messages/:messageId` (unsend) |
+| POST | `/conversations/:id/mute` |
+| DELETE | `/conversations/:id` (delete for me) |
+| GET | `/gifs/trending` |
+| GET | `/gifs/search?q=` |
 
 ## Notifications & reports
 
@@ -123,6 +170,92 @@ In development without SMTP, code-sending responses also include `dev_code`.
 | POST | `/notifications/read-all` |
 | POST | `/notifications/:id/read` |
 | POST | `/reports` |
+
+## Plans & subscriptions
+
+Planned ([plans-and-billing.md](modules/premium/plans-and-billing.md)). Gated routes return `403 PLAN_REQUIRED` / `PLAN_LIMIT_REACHED`.
+
+| Method | Path |
+|--------|------|
+| GET | `/plans` |
+| GET | `/subscriptions/me` (plan, status, limits, usage) |
+| POST | `/subscriptions/billing-token` |
+| POST | `/subscriptions/purchases` (verify StoreKit 2 JWS / Play purchase token) |
+| POST | `/subscriptions/restore` |
+| GET | `/subscriptions/me/transactions` |
+| POST | `/webhooks/apple` (no bearer; App Store Server Notifications V2, JWS-verified) |
+| POST | `/webhooks/google` (no bearer; Pub/Sub push, OIDC-verified) |
+| GET / PATCH | `/admin/plans`, `/admin/plans/:id` |
+| POST / DELETE | `/admin/users/:id/plan-gift` |
+| GET | `/admin/billing-events` |
+
+## Payments (Razorpay — Android, iOS & web)
+
+Built ([razorpay-payments.md](modules/premium/razorpay-payments.md)). The server computes every amount; the app never sends one.
+
+| Method | Path |
+|--------|------|
+| POST | `/payments/quote` |
+| POST | `/payments/checkout` (`Idempotency-Key` header; creates a Razorpay order or AutoPay subscription) |
+| POST | `/payments/verify` (signature + amount checks; `202` while pending) |
+| GET | `/payments/checkouts/:id`, `/payments/checkouts/pending` |
+| POST | `/payments/checkouts/:id/abandon` (`{ reason: cancelled \| failed }`) |
+| POST | `/payments/qr` (single-use fixed-amount UPI QR) |
+| GET | `/payments/history` |
+| POST | `/payments/dev/simulate` (simulator mode only) |
+| POST | `/subscriptions/me/cancel` (stop AutoPay), `/subscriptions/me/resume` (`Idempotency-Key`; new mandate) |
+| POST | `/webhooks/razorpay` (no bearer; `X-Razorpay-Signature` on the raw body) |
+
+Planned: `/payments/:paymentId/invoice`, `/subscriptions/me/payment-method`, `/admin/payments*`, `/admin/coupons`.
+
+## Secret Messages
+
+Planned ([secret-messages.md](modules/premium/secret-messages.md)). Thread ids are UUID v4.
+
+| Method | Path |
+|--------|------|
+| POST | `/secret-messages` (start; Plus / Premium) |
+| GET | `/secret-messages/summary` (all plans) |
+| GET | `/secret-messages/inbox` (Plus / Premium; sealed items have no sender or body) |
+| GET | `/secret-messages/sent` |
+| GET | `/secret-messages/:threadId` |
+| GET | `/secret-messages/:threadId/messages` |
+| POST | `/secret-messages/:threadId/messages` (follow-up or reply; recipient's 2nd reply reveals) |
+| POST | `/secret-messages/:threadId/read` |
+| POST | `/secret-messages/:threadId/report` (all plans) |
+| POST | `/secret-messages/:threadId/block-sender` (all plans) |
+| DELETE | `/secret-messages/:threadId` (hide / withdraw) |
+| GET | `/users/me/secret-blocks` |
+| DELETE | `/users/me/secret-blocks/:blockId` |
+
+## Secret Crush
+
+Planned ([secret-crush.md](modules/premium/secret-crush.md)).
+
+| Method | Path |
+|--------|------|
+| GET | `/secret-crushes/summary` (all plans) |
+| GET | `/secret-crushes` |
+| POST | `/secret-crushes` (Plus 3 / Premium 10 spots; returns `matched`) |
+| DELETE | `/secret-crushes/:userId` |
+| GET | `/secret-crushes/matches` |
+| GET | `/secret-crushes/matches/:matchId` |
+| POST | `/secret-crushes/matches/:matchId/celebrated` |
+
+Inbox, sent, thread, crush-list and match items carry `nearby_hint: { state: 'today' | 'yesterday' | 'locked', valid_until } | null` ([nearby-encounters.md §8](modules/nearby/nearby-encounters.md#8-secret-message-integration)).
+
+## Nearby
+
+Planned ([nearby-encounters.md](modules/nearby/nearby-encounters.md)). All routes need a bearer token; the acting user always comes from the token.
+
+| Method | Path |
+|--------|------|
+| GET | `/nearby/settings` |
+| PATCH | `/nearby/settings` (`enabled`, `bluetooth_enabled`, `location_enabled`, `notifications_enabled`, `timezone`; turning off revokes tokens and deletes presence / pings at once) |
+| POST | `/nearby/ble/tokens` (8 rotating 16-byte ids, 15 min each; `409 NEARBY_DISABLED`) |
+| POST | `/nearby/ble/sightings` (`202`; batch ≤ 50; never reveals which ids matched) |
+| GET | `/nearby/users` (mutually verified Bluetooth presence only, blocks removed) |
+| POST | `/nearby/location` (`202`; accuracy / age checked, rounded, kept 15 min) |
 
 ## Push devices
 
@@ -144,13 +277,16 @@ See [PUSH_NOTIFICATIONS.md](architecture/PUSH_NOTIFICATIONS.md).
 | POST | `/groups/:id/join` |
 | POST | `/groups/:id/leave` |
 
-## Media (Cloudinary)
+## Media (S3 — [MEDIA_STORAGE.md](architecture/MEDIA_STORAGE.md))
 
 | Method | Path |
 |--------|------|
-| POST | `/media/cloudinary-sign` |
-| POST | `/media/confirm` |
-| GET | `/media/:mediaId` |
+| POST | `/media/uploads` (optional `client_upload_id`: same id + same file returns the same media with `resumed: true` and a fresh POST, the same multipart upload, or `upload.method: "complete"`) |
+| POST | `/media/:id/parts` |
+| GET | `/media/:id/parts` |
+| POST | `/media/:id/complete` |
+| GET | `/media/:id` |
+| DELETE | `/media/:id` |
 
 ## Posts (extra)
 
@@ -188,4 +324,4 @@ See [PUSH_NOTIFICATIONS.md](architecture/PUSH_NOTIFICATIONS.md).
 
 | URL | Notes |
 |-----|-------|
-| `/ws/v1/chat` | First frame `{ "type": "auth", "token": "..." }`; events in [chat-thread.md](modules/messages/chat-thread.md) |
+| `/ws/v1/chat` | Socket.IO path; access token in the handshake `auth: { token }`; events in [chat-thread.md](modules/messages/chat-thread.md) |

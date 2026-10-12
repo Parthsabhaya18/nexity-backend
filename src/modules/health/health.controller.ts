@@ -2,7 +2,7 @@ import type { RequestHandler } from 'express';
 import { z } from 'zod';
 
 import { isDatabaseConnected } from '../../config/database';
-import { env, isProduction } from '../../config/env';
+import { env } from '../../config/env';
 import { ApiError } from '../../utils/ApiError';
 import { HealthCheck } from './healthCheck.model';
 
@@ -25,9 +25,14 @@ export const getReadiness: RequestHandler = (_req, res) => {
   });
 };
 
+/** Unauthenticated Mongo writes. Closed whenever the process is production. */
+export function dbTestsOpen(nodeEnv: string = env.NODE_ENV) {
+  return nodeEnv !== 'production';
+}
+
 /** The db-test endpoints write to MongoDB without auth, so they must never be reachable in production. */
 export const requireDbTestEnabled: RequestHandler = (req, res, next) => {
-  if (isProduction) {
+  if (!dbTestsOpen()) {
     next(ApiError.notFound(`Route ${req.method} ${req.originalUrl} not found`));
     return;
   }

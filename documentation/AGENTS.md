@@ -20,9 +20,13 @@ Read this file first when implementing features. Nexity is a **native iOS + Andr
 | [architecture/DATA_MODELS.md](architecture/DATA_MODELS.md) | Shared entities and relationships |
 | [architecture/AUTH_AND_SECURITY.md](architecture/AUTH_AND_SECURITY.md) | Tokens in Keychain/Keystore, refresh flow, store rules |
 | [architecture/PUSH_NOTIFICATIONS.md](architecture/PUSH_NOTIFICATIONS.md) | FCM / APNs push |
-| [architecture/CLOUDINARY.md](architecture/CLOUDINARY.md) | Image/video uploads from the device and delivery |
+| [architecture/MEDIA_STORAGE.md](architecture/MEDIA_STORAGE.md) | Image/video uploads from the device to AWS S3 and delivery |
 | [architecture/INSTAGRAM_CONTENT_UX.md](architecture/INSTAGRAM_CONTENT_UX.md) | Posts, Reels, Stories UX (match Instagram app) |
 | [architecture/THEMING.md](architecture/THEMING.md) | Mood themes (each replaces Light / Dark / System for the whole app), plus dark & light |
+| [modules/premium/](modules/premium/premium-hub.md) | **Secret Messages, Secret Crush, 3 plans (Free / Plus / Premium), store billing** |
+| [modules/premium/razorpay-payments.md](modules/premium/razorpay-payments.md) | **Razorpay payments**: UPI apps, AutoPay, QR, cards, net banking, wallets, server-side amounts, payment security |
+| [architecture/SECRET_FEATURES_SECURITY.md](architecture/SECRET_FEATURES_SECURITY.md) | Anonymity, encryption, purchase verification and moderation rules for the Secret features |
+| [modules/nearby/nearby-encounters.md](modules/nearby/nearby-encounters.md) | **Nearby**: Bluetooth nearby users (rotating ids, mutual verification), location push, today/yesterday hints in Secret features, audit, test plan |
 | [API_QUICK_REFERENCE.md](API_QUICK_REFERENCE.md) | All endpoints |
 
 ## How to implement a feature
@@ -33,7 +37,7 @@ Read this file first when implementing features. Nexity is a **native iOS + Andr
 4. Match **validation**, **auth requirements**, and **acceptance criteria** in the module doc.
 5. Follow **MOBILE_APP.md** for every screen: safe areas, keyboard, Android back, permissions, offline, accessibility.
 6. Verify on **both an Android device/emulator and an iOS simulator** (or note that iOS was not tested if no Mac is available).
-7. **Media**: never send post/reel/story binaries through the API; upload from the device to **Cloudinary** per CLOUDINARY.md.
+7. **Media**: never send post/reel/story binaries through the API; upload from the device to **AWS S3** with `useMediaUpload()` per MEDIA_STORAGE.md.
 8. **Posts / Reels / Stories**: create, view, and edit flows must follow **INSTAGRAM_CONTENT_UX.md**.
 9. **Theme**: every screen must work in Light, Dark and every mood theme using semantic color tokens per **THEMING.md**. A selected mood replaces Light / Dark / System and re-themes the whole app like Dark mode (no white surfaces), so no element may hard-code a color. Buttons keep their design.
 10. If the implementation diverges, update the module doc in the same change (docs are the source of truth).

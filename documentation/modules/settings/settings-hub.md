@@ -16,6 +16,7 @@ Grouped native-style list (iOS inset grouped look; Android full-width rows with 
 | Privacy | `PrivacySettings` |
 | Notifications | `NotificationSettings` — see [notification-settings.md](notification-settings.md) |
 | Theme (Light / Dark / System default, or a mood — one choice for the whole app) | `AppearanceSettings` — see [appearance.md](appearance.md) |
+| Nearby (off by default; Bluetooth, location notifications, Nearby push) | `NearbySettings` — see [nearby-encounters.md](../nearby/nearby-encounters.md#112-nearbysettings) |
 | Blocked accounts | `BlockedAccounts` |
 | Help & support | In-app browser (help center) |
 | Privacy Policy, Terms of Use | In-app browser |

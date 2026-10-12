@@ -90,7 +90,7 @@ Mobile carriers share IPs (CGNAT): combine IP with device id / username for auth
 ## Transport & app hardening
 
 - HTTPS only in release builds. iOS App Transport Security stays enabled; Android `usesCleartextTraffic` is allowed **only** in debug (for `http://localhost:4000`).
-- No secrets in the app bundle (Cloudinary secret, JWT keys, Firebase admin key stay on the server).
+- No secrets in the app bundle (AWS keys, JWT keys, Firebase admin key stay on the server).
 - Release builds: Hermes bytecode, R8/ProGuard minify on Android, strip `console.log`.
 - Sensitive screens (none in v3) may set `FLAG_SECURE` on Android; not required for feed content.
 - Certificate pinning: optional, Phase 2.
@@ -101,7 +101,7 @@ Native apps are not subject to CORS. Keep `CORS_ORIGINS` only for any browser-ba
 
 ## Content security
 
-- **Cloudinary signed uploads** only; see [CLOUDINARY.md](CLOUDINARY.md). Never expose `CLOUDINARY_API_SECRET` to the client.
-- Enable Cloudinary **moderation** add-on or webhook hook (future).
-- Strip EXIF / GPS: photos from phones contain location. Apply Cloudinary `strip_metadata` on delivery when privacy setting `strip_location_metadata` is on (default true).
+- **S3 presigned POST uploads** only (key, type and max size signed by the server, real format verified on complete); see [MEDIA_STORAGE.md](MEDIA_STORAGE.md). Never expose AWS keys to the client.
+- Content moderation (e.g. Amazon Rekognition on complete) is future work.
+- Strip EXIF / GPS: photos from phones contain location. Must be stripped before posts ship when privacy setting `strip_location_metadata` is on (default true).
 - User-generated content requires **Report** and **Block** in the app (App Store guideline 1.2, Google Play UGC policy).

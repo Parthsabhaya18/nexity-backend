@@ -119,6 +119,10 @@ The client sends `mood: null` together with the new `theme` when the user picks 
 - [ ] Settings hub row shows the active choice.
 - [ ] Offline change is kept locally and synced on next launch.
 
+## Implementation status
+
+Settings → **Theme** (`Appearance`) applies Light, Dark, System or one of the ten moods immediately and saves `PATCH /users/me/preferences`. A mood replaces the theme until it is tapped again or a theme is chosen. There is no GPS or Nearby control; location on a post or reel is a place name (search), not the device location.
+
 ## Cursor checklist
 
 - [ ] `ThemeProvider` + `useTheme()` with AsyncStorage persistence (`nexity.theme`, `nexity.mood`)

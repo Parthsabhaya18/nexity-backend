@@ -8,7 +8,7 @@ Full specs for **Nexity**, a native **iOS + Android** social app (React Native i
 | Cursor | [AGENTS.md](./AGENTS.md), [CURSOR_GUIDE.md](./CURSOR_GUIDE.md) |
 | iOS & Android rules | [architecture/MOBILE_APP.md](./architecture/MOBILE_APP.md) |
 | Push notifications | [architecture/PUSH_NOTIFICATIONS.md](./architecture/PUSH_NOTIFICATIONS.md) |
-| Cloudinary | [architecture/CLOUDINARY.md](./architecture/CLOUDINARY.md) |
+| Media storage (AWS S3) | [architecture/MEDIA_STORAGE.md](./architecture/MEDIA_STORAGE.md) |
 | Instagram UX | [architecture/INSTAGRAM_CONTENT_UX.md](./architecture/INSTAGRAM_CONTENT_UX.md) |
 | Theme: Light / Dark / System or a mood (one choice, whole app) | [architecture/THEMING.md](./architecture/THEMING.md), [modules/settings/appearance.md](./modules/settings/appearance.md) |
 | API list | [API_QUICK_REFERENCE.md](./API_QUICK_REFERENCE.md) |

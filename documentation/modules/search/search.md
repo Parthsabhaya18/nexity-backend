@@ -1,40 +1,45 @@
 # Search
 
-**Screen:** search mode of `Explore` (SearchTab) — activates when the search bar is focused  
+**Screen:** `Search` tab  
 **Deep link:** `nexity://search?q=:query`  
-**Theme:** Dark & light — [THEMING.md](../../architecture/THEMING.md)  
+**Theme:** Light, Dark and every mood. See [THEMING.md](../../architecture/THEMING.md)  
 **Auth required:** Yes
 
 ## Purpose
 
-Search users, hashtags, and posts by keyword.
+Find people by username or name. Hashtags were removed from the app, so there is no tag search.
 
 ## UI
 
-- Search input (`returnKeyType="search"`, `autoCapitalize="none"`, `autoCorrect={false}`, clear button) with **Cancel** to leave search mode and dismiss the keyboard.
-- Top tabs: Top | Accounts | Tags | Posts.
-- Recent searches stored in AsyncStorage (max 20, swipe/✕ to remove, **Clear all**).
-- Results list dismisses the keyboard on scroll (`keyboardDismissMode="on-drag"`).
-- Android back / iOS Cancel exits search mode before leaving the tab.
+- Search input (`returnKeyType="search"`, `autoCapitalize="none"`, `autoCorrect={false}`, clear button).
+- **Empty box:** only the **Recent** list, the profiles the user opened from Search (newest first, max 20). Each row has an **✕** to remove it, and there is **Clear all**. When there is no history, a short hint is shown instead.
+- **Typing:** matching profiles, each with a Follow button. Opening a profile adds it to Recent.
+- Results dismiss the keyboard on scroll (`keyboardDismissMode="on-drag"`).
+- The list is fetched again whenever the tab gains focus.
 
 ## API
 
 ### `GET /api/v1/search`
 
-**Query:** `q`, `type=all|users|tags|posts`, `cursor`
+**Query:** `q`, `type=users|places` (default `users`), `limit` (default 20, max 50).
 
-**Example fragment:**
+- `type=users` → `{ "users": UserSummary[] }`. Matches anywhere in the username or display name. Active, verified accounts only. **Blocked users never appear, in either direction** (people you blocked and people who blocked you).
+- `type=places` → `{ "places": [...] }` for the location sheet in the composers.
 
-```json
-{
-  "users": [{ "username", "display_name", "avatar_url" }],
-  "tags": [{ "name", "post_count" }],
-  "posts": []
-}
-```
+### Search history
+
+| Method | Path | Body / result |
+|--------|------|---------------|
+| GET | `/search/history` | `{ "users": UserSummary[] }`, newest first, max 20; blocked, deactivated or unverified accounts are left out |
+| POST | `/search/history` | `{ "user_id" }` → `204`; moves an existing entry to the top (30 stored); `404` for an inactive user |
+| DELETE | `/search/history/:userId` | `204` |
+| DELETE | `/search/history` | `204` (clear all) |
+
+History is stored on the server, so it follows the account across devices.
 
 ## Acceptance criteria
 
-- [ ] Debounce input 300 ms; cancel in-flight request when the query changes.
-- [ ] Empty query shows recents + trending tags.
-- [ ] Tapping a user opens `UserProfile`; a tag opens `HashtagFeed`.
+- [x] Debounce input 300 ms; cancel in-flight request when the query changes.
+- [x] Empty query shows only recent searches, each removable with ✕.
+- [x] A search shows matching profiles; blocked users never appear.
+- [x] Tapping a user opens `UserProfile` and saves it to Recent.

@@ -2,15 +2,18 @@ import bcrypt from 'bcryptjs';
 import type { z } from 'zod';
 
 import { ApiError } from '../../utils/ApiError';
+import { Follow } from '../follows/follow.model';
 import { User, type UserDoc, toMeDto } from '../users/user.model';
 import type { loginSchema, registerSchema } from './auth.schema';
 import { consumeOtp, sendOtp, type SendResult } from './otp.service';
 import {
   type DeviceInfo,
   issueTokenPair,
+  listSessions,
   RESET_TOKEN_EXPIRES_IN,
   revokeAllUserTokens,
   revokeRefreshFamily,
+  revokeSession,
   rotateRefreshToken,
   signResetToken,
   verifyResetToken,
@@ -22,17 +25,11 @@ const LOCK_MINUTES = 15;
 // Compared against when the user doesn't exist, so response time doesn't reveal registered emails.
 const DUMMY_HASH = bcrypt.hashSync('nexity-dummy-password', BCRYPT_COST);
 
-const UNVERIFIED_HOLD_MS = 24 * 60 * 60 * 1000;
-
 const invalidCredentials = () =>
   ApiError.unauthorized('Incorrect email, username or password.', 'INVALID_CREDENTIALS');
 
-/** An unverified sign-up only reserves its username for 24 hours. */
-const isStaleUnverified = (user: UserDoc) =>
-  !user.is_verified && Date.now() - (user.get('updated_at') as Date).getTime() > UNVERIFIED_HOLD_MS;
-
 async function session(user: UserDoc, device: DeviceInfo) {
-  return { ...(await issueTokenPair(user.id as string, device)), user: toMeDto(user) };
+  return { ...(await issueTokenPair(user.id as string, device)), user: await toMeDto(user) };
 }
 
 export async function register(input: z.infer<typeof registerSchema>) {
@@ -51,11 +48,12 @@ export async function register(input: z.infer<typeof registerSchema>) {
     );
   }
   if (byUsername && !byUsername._id.equals(byEmail?._id)) {
-    if (!isStaleUnverified(byUsername)) {
+    if (byUsername.is_verified) {
       throw ApiError.conflict('That username is taken. Try another.', 'USERNAME_TAKEN', {
         field: 'username',
       });
     }
+    // An unfinished sign-up must not lock the username. Drop it so this attempt can claim it.
     await byUsername.deleteOne();
   }
 
@@ -239,11 +237,142 @@ export async function logout(refreshToken: string) {
   await revokeRefreshFamily(refreshToken);
 }
 
+async function withPassword(user: UserDoc) {
+  const loaded = await User.findById(user._id).select('+password_hash');
+  if (!loaded) throw ApiError.unauthorized('Your session has ended. Please log in again.');
+  return loaded;
+}
+
+/**
+ * Every other device is signed out. The caller's access token is now too old to use,
+ * so a fresh session for this device is returned.
+ */
+export async function changePassword(
+  user: UserDoc,
+  currentPassword: string,
+  newPassword: string,
+  device: DeviceInfo,
+) {
+  const loaded = await withPassword(user);
+  if (!(await bcrypt.compare(currentPassword, loaded.password_hash))) {
+    throw ApiError.badRequest(
+      "That's not your current password.",
+      { field: 'current_password' },
+      'INVALID_PASSWORD',
+    );
+  }
+  if (await bcrypt.compare(newPassword, loaded.password_hash)) {
+    throw ApiError.badRequest(
+      "Choose a password you haven't used.",
+      { field: 'new_password' },
+      'PASSWORD_REUSED',
+    );
+  }
+  loaded.set({
+    password_hash: await bcrypt.hash(newPassword, BCRYPT_COST),
+    password_changed_at: new Date(),
+  });
+  await loaded.save();
+  await revokeAllUserTokens(loaded._id);
+  return issueTokenPair(loaded.id as string, device);
+}
+
+const deviceName = (platform: string | null | undefined) =>
+  platform === 'android'
+    ? 'Android phone'
+    : platform === 'ios'
+      ? 'iPhone'
+      : platform === 'web'
+        ? 'Web browser'
+        : 'Unknown device';
+
+export async function sessions(user: UserDoc, currentSessionId: string | null) {
+  const rows = await listSessions(user._id);
+  const items = rows.map((r) => ({
+    id: r.family_id,
+    device: deviceName(r.platform),
+    platform: r.platform ?? null,
+    app_version: r.app_version ?? null,
+    last_active_at: (r.last_used_at ?? (r as { created_at?: Date }).created_at ?? new Date()).toISOString(),
+    current: r.family_id === currentSessionId,
+  }));
+  items.sort((a, b) => Number(b.current) - Number(a.current));
+  return { items };
+}
+
+export async function logoutSession(user: UserDoc, sessionId: string, currentSessionId: string | null) {
+  if (sessionId === currentSessionId) {
+    throw ApiError.badRequest(
+      'Use Log out to sign out of this device.',
+      undefined,
+      'CURRENT_SESSION',
+    );
+  }
+  if (!(await revokeSession(user._id, sessionId))) {
+    throw ApiError.notFound('That device is already logged out.');
+  }
+}
+
+export async function logoutOtherSessions(user: UserDoc, currentSessionId: string | null) {
+  // Tokens from before session ids existed can't say which device is "this one".
+  if (!currentSessionId) {
+    throw ApiError.conflict('Refresh and try again.', 'SESSION_UNKNOWN');
+  }
+  await revokeAllUserTokens(user._id, { exceptFamily: currentSessionId });
+}
+
+/**
+ * The row is kept (chats and comments point at it) but hidden everywhere: every lookup
+ * filters on `status: 'active'`. Email and username are released for new sign-ups.
+ */
+export async function deleteAccount(user: UserDoc, password: string) {
+  const loaded = await withPassword(user);
+  if (!(await bcrypt.compare(password, loaded.password_hash))) {
+    throw ApiError.badRequest("That's not your password.", { field: 'password' }, 'INVALID_PASSWORD');
+  }
+
+  const rows = await Follow.find({
+    $or: [{ follower_id: loaded._id }, { following_id: loaded._id }],
+    status: 'accepted',
+  })
+    .select('follower_id following_id')
+    .lean();
+  const followed = rows.filter((r) => r.follower_id.equals(loaded._id)).map((r) => r.following_id);
+  const followers = rows.filter((r) => r.following_id.equals(loaded._id)).map((r) => r.follower_id);
+  await Promise.all([
+    User.updateMany(
+      { _id: { $in: followed }, followers_count: { $gt: 0 } },
+      { $inc: { followers_count: -1 } },
+    ),
+    User.updateMany(
+      { _id: { $in: followers }, following_count: { $gt: 0 } },
+      { $inc: { following_count: -1 } },
+    ),
+  ]);
+  await Follow.deleteMany({ $or: [{ follower_id: loaded._id }, { following_id: loaded._id }] });
+
+  const id = loaded.id as string;
+  loaded.set({
+    status: 'deleted',
+    email: `deleted-${id}@deleted.nexity.invalid`,
+    username: `deleted_${id}`,
+    display_name: 'Deleted account',
+    bio: '',
+    website: '',
+    avatar_url: null,
+    followers_count: 0,
+    following_count: 0,
+    password_changed_at: new Date(),
+  });
+  await loaded.save();
+  await revokeAllUserTokens(loaded._id);
+}
+
 export async function isUsernameAvailable(raw: string) {
   const username = raw.trim().toLowerCase();
   if (!/^[a-z0-9._]{3,30}$/.test(username)) return { available: false, reason: 'invalid' as const };
   const holder = await User.findOne({ username });
-  return holder && !isStaleUnverified(holder)
-    ? { available: false, reason: 'taken' as const }
-    : { available: true };
+  // Only a verified account owns the name. An abandoned OTP attempt stays available.
+  if (holder?.is_verified) return { available: false, reason: 'taken' as const };
+  return { available: true };
 }

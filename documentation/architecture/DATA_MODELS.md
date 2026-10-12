@@ -11,9 +11,12 @@ Physical schema may differ; fields and relationships must remain equivalent.
 | password_hash | string | |
 | username | string | unique, public |
 | display_name | string | |
-| bio | text | max 500 |
-| avatar_url | string | nullable |
+| bio | text | max 150 (Instagram) |
+| website | string | max 200, full `http(s)` URL or empty |
+| avatar_media_id | ObjectId → Media | nullable; old avatar is deleted from S3 when replaced |
+| avatar_key | string | nullable; S3 key of the avatar. APIs return `avatar_url` built from it per response (CDN or presigned URL) |
 | is_private | boolean | default false |
+| posts_count / followers_count / following_count | int | default 0, denormalised; kept in sync by the post and follow modules |
 | is_verified | boolean | email verified |
 | role | enum | `user`, `moderator`, `admin` |
 | theme_preference | enum | `system` (default), `light`, `dark` — see [THEMING.md](THEMING.md) |
@@ -32,26 +35,28 @@ Physical schema may differ; fields and relationships must remain equivalent.
 
 Unique: `(follower_id, following_id)`.
 
-## MediaAsset (Cloudinary)
+> Implementation note: stored in the `follows` collection with ObjectId ids (exposed as 24-char hex strings). Also indexed on `(following_id, status, _id)` and `(follower_id, status, _id)` for the lists. Accepting a request or following a public account increments `User.followers_count` / `following_count`; unfollowing or removing an accepted follower decrements them (never below 0).
 
-Stored in DB after `POST /media/confirm`.
+## MediaAsset (S3) — collection `media_assets`
+
+Created as `pending` by `POST /media/uploads`, becomes `ready` after `POST /media/:id/complete`. See [MEDIA_STORAGE.md](MEDIA_STORAGE.md).
 
 | Field | Type |
 |-------|------|
-| id | UUID |
-| owner_id | UUID |
-| public_id | string |
-| resource_type | `image` \| `video` |
-| secure_url | string |
-| bytes | int |
-| width, height | int |
-| duration_ms | int, nullable |
-| format | string |
+| id | ObjectId (string in APIs) |
+| owner_id | ObjectId → User |
 | purpose | `post` \| `reel` \| `story` \| `avatar` \| `message` |
-| status | `processing` \| `ready` \| `failed` |
-| created_at | datetime |
+| kind | `image` \| `video` |
+| key | string, unique — S3 object key |
+| content_type | string |
+| bytes | int — declared while pending, actual once ready |
+| width, height | int, nullable |
+| duration_ms | int, nullable (videos) |
+| status | `pending` \| `ready` |
+| upload_expires_at | datetime — pending rows past this (+10 min) are purged |
+| created_at, updated_at | datetime |
 
-Delivery URLs with transforms are computed at read time, not stored as canonical.
+The public `url` is computed at read time from `MEDIA_PUBLIC_BASE_URL` + `key`, not stored.
 
 ## Post
 
@@ -69,6 +74,8 @@ Delivery URLs with transforms are computed at read time, not stored as canonical
 | is_edited | boolean |
 | is_deleted | boolean |
 | created_at, updated_at | datetime |
+
+> Implementation note (collection `posts`, ObjectId ids): `media` is an embedded ordered array `{ media_id, key, kind, width, height, alt_text }` (alt text max 100). Also stored: `mention_ids` + `mentions` (usernames that existed when shared, max 20), `aspect_ratio` (width / height of the carousel frame, 0.8–1.91), `location_lat` / `location_lng` (nullable), `adjustments` (brightness, contrast, saturation, warmth, fade, sharpen, blur, vignette), `likes_count`, `comments_count`, `client_upload_id` (unique per author when set). There is no `visibility` field yet: a post follows its author's account privacy. `tagged_ids` (max 20, sent as `tagged_user_ids`, returned as `tagged_users`). Hashtags are not stored. Media used by a post can't be deleted through `DELETE /media/:id` (`409 MEDIA_IN_USE`). `User.posts_count` is incremented on create.
 
 ## PostLike, PostSave, Comment
 
@@ -95,6 +102,8 @@ Delivery URLs with transforms are computed at read time, not stored as canonical
 | is_edited | boolean |
 | created_at | datetime |
 
+> Implementation: also `location_lat` / `location_lng`, `audio_muted`, `hide_like_count`, `comments_disabled`, `cover_time_ms`, and `cover_key` (optional uploaded cover photo). Trim is a playback window, not a re-encoded file.
+
 ## Story
 
 | Field | Type |
@@ -108,10 +117,41 @@ Delivery URLs with transforms are computed at read time, not stored as canonical
 
 No `is_edited` — stories are not editable after publish (Instagram parity).
 
+> Implementation: also `location_name`, `location_lat` / `location_lng`, and `overlays` (up to 12: text, sticker, draw, poll, question, quiz, countdown, link, mention; old stories may still hold a hashtag overlay). Overlays are drawn in the viewer; they are not baked into the media file. Poll votes live in `story_poll_votes`. Question answers live in `story_question_replies`.
+
 ## Conversation, Message
 
 - **Conversation**: id, type `direct` \| `group`, participant ids.
 - **Message**: id, conversation_id, sender_id, body, media_id optional (→ MediaAsset), story_id optional (story reply), client_message_id (UUID generated on the device for de-duplication / optimistic UI), read_by[], created_at.
+
+Physical schema (MongoDB, `backend/src/modules/messages/`):
+
+**`conversations`**
+
+| Field | Notes |
+|-------|-------|
+| type | `direct` \| `group` |
+| direct_key | sorted participant ids joined by `:`; unique (partial index) → one direct chat per pair |
+| participant_ids | ObjectId[]; index `{ participant_ids, last_message_at: -1, _id: -1 }` serves the inbox |
+| members[] | per participant: `user_id`, `role`, `joined_at`, `last_read_message_id`, `last_read_at`, `unread_count`, `muted_until`, `cleared_at`, `hidden` |
+| last_message | denormalised preview `{ id, sender_id, type, body (≤200), created_at }` so the inbox never reads `messages` |
+| last_message_at, message_count, created_by, created_at, updated_at | |
+
+**`messages`**
+
+| Field | Notes |
+|-------|-------|
+| conversation_id, sender_id | index `{ conversation_id, _id: -1 }` — ObjectIds are time-ordered, so `_id` is the page cursor |
+| type | `text` \| `image` \| `system` |
+| body | trimmed, max 2000 |
+| media | `{ media_id, url, width, height }` or null (filled once Cloudinary uploads ship) |
+| reply_to_id | optional |
+| client_message_id | unique per sender `{ sender_id, client_message_id }` — idempotent retries |
+| deleted_at | unsend keeps the row, hides the content |
+
+`read_by[]` is represented by `members[].last_read_message_id`: a message is read by a member when its id ≤ their marker. This keeps read receipts O(1) per read instead of one write per message.
+
+**`users.last_active_at`** is set when a user's last chat socket disconnects (activity status).
 
 ## Device (push notifications)
 
@@ -183,6 +223,115 @@ One row per user. Booleans default `true` unless noted.
 | details | text |
 | status | `open` \| `resolved` |
 
+## Plans & subscriptions
+
+Module `backend/src/modules/subscriptions/` — [plans-and-billing.md](../modules/premium/plans-and-billing.md).
+
+**`plans`** — `_id` = `free` | `plus` | `premium`
+
+| Field | Notes |
+|-------|-------|
+| name, description, features[] | Shown on the paywall |
+| rank | 0 free, 1 plus, 2 premium (highest entitled plan wins) |
+| mrp_inr, price_inr | Display only; real prices come from the store |
+| active | Inactive plans are hidden from `GET /plans` (existing subscribers keep them) |
+| limits | `{ secret_messages_per_month (-1 = unlimited), secret_messages_per_day_fair_use, crush_spots, read_secret, nearby, badge }` |
+| products | `{ ios: { monthly, quarterly, yearly }, android: { subscription_id, base_plans } }` |
+
+**`subscriptions`**
+
+| Field | Notes |
+|-------|-------|
+| user_id | ObjectId → User; index `{ user_id, status }` |
+| plan_id | `plus` \| `premium` |
+| source | `app_store` \| `google_play` \| `gift` |
+| period | `monthly` \| `quarterly` \| `yearly` \| `null` (gift) |
+| store_product_id | |
+| original_transaction_id | iOS; unique `{ source, original_transaction_id }` (partial) |
+| purchase_token, linked_purchase_token | Android; unique `{ source, purchase_token }` (partial) |
+| environment | `production` \| `sandbox` |
+| status | `active` \| `canceled` \| `in_grace` \| `on_hold` \| `paused` \| `expired` \| `revoked` |
+| auto_renew | boolean |
+| current_period_start, current_period_end | datetime |
+| grace_ends_at | nullable |
+| acknowledged | Android |
+| gift | `{ admin_id, note }` for `source: gift` |
+| last_event_at | Newest store event applied (out-of-order guard) |
+| transferred_from_user_id, transferred_at | Restore on another account |
+| created_at, updated_at | |
+
+**`billing_events`** — raw store notifications and verification results: `store`, `store_event_id` (unique), `type`, `subtype`, `user_id` (nullable), `subscription_id`, `payload` (verified, decoded), `status` (`processed` \| `ignored` \| `orphan` \| `failed`), `amount_inr`, `store_order_id`, `created_at`. Kept 2 years. Also powers billing history.
+
+**Razorpay collections** (`payment_checkouts`, `payments`, `payment_webhook_events`, `coupons`, `coupon_redemptions`) and the Razorpay fields on `subscriptions` (`source: 'razorpay'`, `razorpay_subscription_id`, `razorpay_plan_id`, `price_paise`, `next_charge_at`, `payment_method_display`) are defined in [razorpay-payments.md §7](../modules/premium/razorpay-payments.md#7-data-mongodb). Money is always integer paise; card / UPI / bank details are never stored.
+
+**`secret_usage`** — `user_id`, `month` (`2026-10`, Asia/Kolkata), `count`, `day` + `day_count` (fair use). Unique `{ user_id, month }`.
+
+**User additions:** `entitlement { plan, expires_at, source, updated_at }` (cache, recomputed on every subscription change), `billing_account_token` (UUID v4, unique, sparse), `secret_suspended_until` (moderation), privacy `allow_secret_messages` / `allow_secret_crush` (`everyone` default \| `following` \| `off`).
+
+## Secret Messages
+
+Module `backend/src/modules/secret-messages/` — [secret-messages.md](../modules/premium/secret-messages.md). Public ids are random UUID v4 (never ObjectIds — they contain the exact creation time).
+
+**`secret_threads`**
+
+| Field | Notes |
+|-------|-------|
+| public_id | UUID v4, unique — used in APIs and deep links |
+| sender_id, recipient_id | ObjectId → User |
+| status | `sealed` \| `revealed` \| `archived` \| `withdrawn` |
+| replies_used | 0–2 (recipient replies); reply 2 reveals |
+| sender_followups_unanswered | 0–3; reset when the recipient replies |
+| conversation_id | Direct conversation after the reveal |
+| revealed_at, archived_at | |
+| members | `{ sender: { last_read_at, hidden }, recipient: { last_read_at, hidden } }` |
+| last_activity_at, created_at | |
+
+Indexes: partial unique `{ sender_id, recipient_id }` where `status: 'sealed'`; `{ recipient_id, status, last_activity_at: -1 }` (inbox); `{ sender_id, last_activity_at: -1 }` (sent).
+
+**`secret_thread_messages`**: `public_id`, `thread_id`, `author` (`sender` \| `recipient`), `author_id`, `body_enc` `{ ct, iv, tag, key_version }` (AES-256-GCM), `client_message_id` (unique per `author_id`), `created_at`. Index `{ thread_id, _id: -1 }`.
+
+**`secret_blocks`**: `public_id`, `blocker_id`, `blocked_id`, `created_at`. Unique `{ blocker_id, blocked_id }`. `blocked_id` is never returned to the blocker.
+
+## Secret Crush
+
+Module `backend/src/modules/secret-crush/` — [secret-crush.md](../modules/premium/secret-crush.md).
+
+**`crushes`**
+
+| Field | Notes |
+|-------|-------|
+| from_user_id, to_user_id | Unique `{ from_user_id, to_user_id }`; index `{ to_user_id, status }` |
+| status | `active` \| `paused` \| `matched` \| `removed` |
+| match_id | → `crush_matches` |
+| notified_at | Last "Someone added you" sent (30-day window) |
+| removed_at | 24 h re-add cooldown; hard-deleted 30 days later |
+| created_at, updated_at | |
+
+**`crush_matches`**: `public_id` (UUID), `pair_key` (sorted ids joined by `:`, **unique**), `user_ids[2]`, `conversation_id`, `matched_at`, `celebrated_at` `{ <userId>: datetime }`.
+
+**`crush_admirer_counts`**: `user_id` (unique), `count`, `recomputed_at`.
+
+**Conversation additions:** `origin` (`null` \| `secret_message` \| `secret_crush_match`), `theme` (`null` \| `love`). Messages copied in from a revealed thread carry `meta { origin: 'secret_message', sent_at }`.
+
+**Notification additions:** `actor_id` becomes **nullable**; it is always `null` for anonymous types (`secret_message_received`, `secret_message_followup`, `crush_added`, `nearby_encounter`). New field `entity_id` (thread / match public id).
+
+## Nearby
+
+Module `backend/src/modules/nearby/` — [nearby-encounters.md §7](../modules/nearby/nearby-encounters.md#7-mongodb-data-model). No collection keeps coordinates longer than 15 minutes, and no encounter history is kept (one row per pair, latest only).
+
+**User additions:** `nearby { enabled, bluetooth_enabled, location_enabled, notifications_enabled, timezone (IANA, default Asia/Kolkata), consented_at, updated_at }` — all switches default `false`. Never part of the public user DTO.
+
+| Collection | Key fields | Indexes / TTL |
+|---|---|---|
+| `nearby_ble_tokens` | `token_hash` (sha256 of the 16-byte id), `user_id`, `valid_from`, `valid_until`, `revoked_at`, `expire_at` | unique `token_hash`; `{ user_id, valid_until: -1 }`; TTL `expire_at` (+1 h) |
+| `nearby_sightings` | `reporter_id`, `subject_id`, `token_hash`, `first_seen_at`, `last_seen_at`, `count`, `rssi_bucket` | unique `{ reporter_id, token_hash }`; `{ subject_id, reporter_id, last_seen_at: -1 }`; TTL (+30 min) |
+| `nearby_presence` | `viewer_id`, `subject_id`, `verified_at` | unique `{ viewer_id, subject_id }`; TTL (+5 min) |
+| `nearby_location_pings` | `user_id`, `cell` (geohash-7), `lat`, `lng` (4 decimals), `accuracy_m`, `captured_at` | `{ cell, captured_at: -1 }`; TTL (+15 min) |
+| `encounters` | `public_id`, `pair_key` (sorted ids), `participant_a`, `participant_b`, `detected_at`, `last_detected_at`, `source` (`ble` \| `location` \| `hybrid`), `validation_status`, `expires_at`, `notification_dedup_key` | unique `pair_key`; `{ participant_a, last_detected_at: -1 }`; `{ participant_b, last_detected_at: -1 }`; TTL `expires_at` |
+| `nearby_notifications` (outbox + idempotency) | `dedup_key`, `recipient_id`, `pair_key`, `notification_id`, `push_status`, `attempts`, `next_attempt_at` | unique `dedup_key`; `{ push_status, next_attempt_at }`; TTL (+7 days) |
+
+Queries always filter by time as well (TTL deletion lags).
+
 ## Hashtag
 
-Extract `#word` from captions; store normalized tag (lowercase) and link table `post_hashtags`.
+Removed. Captions are not parsed for hashtags, and there is no tag search and no hashtag feed.

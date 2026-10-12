@@ -13,11 +13,13 @@ List direct conversations sorted by latest message.
 
 - Header: your username, **New message** icon → `NewMessage` modal.
 - Search conversations at top.
-- Row: avatar (online dot if activity status allowed), name, last message preview, timestamp, unread dot/bold.
-- Swipe actions (iOS) / long-press (Android): Mute, Delete conversation.
+- Row: avatar (green online dot), name, last message preview ("Sent a GIF", "You unsent a message", …), **"Active now"** with a green dot while the person is online, timestamp, unread count (grey when muted), muted bell icon.
+- Long-press a row: Mute / Unmute messages, Delete chat (confirm; deletes for you only). Muted chats don't count toward the Home header badge.
 - Pull-to-refresh; infinite scroll.
 
 ## API
+
+In the app this screen is `Chats` (opened from the Home header chat icon). Conversations without messages are not listed. Rows use the conversation shape from [chat-thread.md](chat-thread.md#get-apiv1conversationsid); pagination follows the standard list response.
 
 ### `GET /api/v1/conversations`
 

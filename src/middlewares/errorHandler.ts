@@ -5,8 +5,8 @@ import { ZodError } from 'zod';
 import { isProduction } from '../config/env';
 import { ApiError } from '../utils/ApiError';
 import { logger } from '../utils/logger';
+import { MONGO_DUPLICATE_KEY } from '../utils/mongo';
 
-const MONGO_DUPLICATE_KEY = 11000;
 
 function sendError(
   res: Response,
