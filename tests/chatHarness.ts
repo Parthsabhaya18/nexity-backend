@@ -10,6 +10,7 @@ import { afterAll, beforeAll, beforeEach } from 'vitest';
 import { createApp } from '../src/app';
 import { connectDatabase, disconnectDatabase } from '../src/config/database';
 import { signAccessToken } from '../src/modules/auth/tokens';
+import { Follow } from '../src/modules/follows/follow.model';
 import { Conversation } from '../src/modules/messages/conversation.model';
 import { Message } from '../src/modules/messages/message.model';
 import { registerChatHandlers } from '../src/modules/messages/messages.socket';
@@ -29,7 +30,7 @@ export function useChatHarness() {
   beforeAll(async () => {
     mongo = await MongoMemoryServer.create();
     await connectDatabase(mongo.getUri());
-    await Promise.all([User.init(), Conversation.init(), Message.init()]);
+    await Promise.all([User.init(), Conversation.init(), Message.init(), Follow.init()]);
     server = createServer(app);
     attachRealtime(server, registerChatHandlers);
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -46,7 +47,12 @@ export function useChatHarness() {
 
   beforeEach(async () => {
     sockets.splice(0).forEach((s) => s.disconnect());
-    await Promise.all([User.deleteMany({}), Conversation.deleteMany({}), Message.deleteMany({})]);
+    await Promise.all([
+      User.deleteMany({}),
+      Conversation.deleteMany({}),
+      Message.deleteMany({}),
+      Follow.deleteMany({}),
+    ]);
   });
 }
 
@@ -80,7 +86,17 @@ export const api = (who: Person) => ({
     request(app).delete(`/api/v1${url}`).set('Authorization', `Bearer ${who.token}`),
 });
 
+/** Accepted follow. Public accounts do this immediately; tests set the row directly. */
+export async function acceptedFollow(follower: Person, following: Person) {
+  await Follow.updateOne(
+    { follower_id: follower.id, following_id: following.id },
+    { $set: { status: 'accepted' } },
+    { upsert: true },
+  );
+}
+
 export async function openChat(a: Person, b: Person) {
+  await Promise.all([acceptedFollow(a, b), acceptedFollow(b, a)]);
   const res = await api(a).post('/conversations', { participant_ids: [b.id] });
   return res.body.id as string;
 }

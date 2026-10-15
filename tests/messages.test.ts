@@ -10,6 +10,7 @@ import {
   app,
   connected,
   nextEvent,
+  acceptedFollow,
   openChat,
   person,
   send,
@@ -28,6 +29,7 @@ describe('conversations', () => {
   it('opens one direct conversation per pair, from either side', async () => {
     const riya = await person('riya.writes');
     const arjun = await person('arjun.k');
+    await Promise.all([acceptedFollow(riya, arjun), acceptedFollow(arjun, riya)]);
 
     const first = await api(riya).post('/conversations', { participant_ids: [arjun.id] });
     expect(first.status).toBe(201);

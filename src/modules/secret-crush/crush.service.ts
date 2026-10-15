@@ -1,8 +1,7 @@
-import { randomInt, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 
 import mongoose, { isValidObjectId, type Types } from 'mongoose';
 
-import { env } from '../../config/env';
 import { emitToUser } from '../../realtime/io';
 import { ApiError } from '../../utils/ApiError';
 import { openMatchConversation } from '../messages/messages.service';
@@ -30,7 +29,6 @@ import {
 } from './crush.models';
 
 const HOUR_MS = 3_600_000;
-const COOLDOWN_MS = 24 * HOUR_MS;
 const NOTICE_GAP_MS = 30 * 24 * HOUR_MS;
 export const DAILY_ADDS = 10;
 
@@ -38,17 +36,6 @@ export const ADDED_NOTICE = 'Someone added you as a Secret Crush 👀';
 
 const isDuplicateKey = (err: unknown) =>
   err instanceof mongoose.mongo.MongoServerError && err.code === MONGO_DUPLICATE_KEY;
-
-/** Random 30–120 s, so the notice can't be matched to the adder's activity. */
-const noticeDelayMs = () => (env.NODE_ENV === 'test' ? 0 : randomInt(30_000, 120_001));
-
-function later(ms: number, task: () => void) {
-  if (ms <= 0) {
-    task();
-    return;
-  }
-  setTimeout(task, ms).unref();
-}
 
 const cannotAdd = () =>
   ApiError.forbidden("You can't add this person as a Secret Crush.", 'CANNOT_ADD_CRUSH');
@@ -83,11 +70,9 @@ const publicUser = (u: PublicUserSource) => {
   };
 };
 
-function emitSummary(userId: Types.ObjectId, event: string, payload: Record<string, unknown>, delay = 0) {
-  later(delay, () => {
-    emitToUser(userId.toString(), event, payload);
-    emitToUser(userId.toString(), 'crush.summary', {});
-  });
+function emitSummary(userId: Types.ObjectId, event: string, payload: Record<string, unknown>) {
+  emitToUser(userId.toString(), event, payload);
+  emitToUser(userId.toString(), 'crush.summary', {});
 }
 
 /** Ids the viewer has any block with (normal block either way, or an anonymous block either way). */
@@ -232,13 +217,11 @@ export async function syncCrushes(user: UserDoc) {
 
 /* ---------- Reads ---------- */
 
-/** Rises live, falls only after 00:00 IST. New crushes count once their notice could have arrived. */
+/** Rises as soon as someone adds you, and falls only after 00:00 IST. */
 async function admirersCount(viewer: UserDoc, now = new Date()) {
-  const visibleBefore = new Date(now.getTime() - (env.NODE_ENV === 'test' ? 0 : 120_000));
   const rows = await Crush.find({
     to_user_id: viewer._id,
     status: 'active',
-    added_at: { $lte: visibleBefore },
   })
     .select('from_user_id')
     .lean();
@@ -264,7 +247,7 @@ async function admirersCount(viewer: UserDoc, now = new Date()) {
 
 type CrushDto = {
   user: ReturnType<typeof publicUser>;
-  status: 'active' | 'paused' | 'matched';
+  status: 'active' | 'paused' | 'matched' | 'removed';
   added_at: string;
   nearby_hint: NearbyHint | null;
 };
@@ -273,7 +256,7 @@ export async function listCrushes(viewer: UserDoc) {
   await syncCrushes(viewer);
   const rows = await Crush.find({
     from_user_id: viewer._id,
-    status: { $in: ['active', 'paused'] },
+    status: { $in: ['active', 'paused', 'removed'] },
   })
     .sort({ added_at: -1, _id: -1 })
     .limit(50)
@@ -286,7 +269,8 @@ export async function listCrushes(viewer: UserDoc) {
     return [
       {
         user: publicUser(u),
-        status: r.status === 'paused' ? ('paused' as const) : ('active' as const),
+        status:
+          r.status === 'paused' || r.status === 'removed' ? r.status : ('active' as const),
         added_at: r.added_at.toISOString(),
         nearby_hint: hints.get(r.to_user_id.toString()) ?? null,
       },
@@ -365,7 +349,7 @@ export async function summary(viewer: UserDoc) {
   await syncCrushes(viewer);
   const limit = spotsOf(viewer);
   const [used, admirers, matches] = await Promise.all([
-    Crush.countDocuments({ from_user_id: viewer._id, status: { $in: ['active', 'paused'] } }),
+    Crush.countDocuments({ from_user_id: viewer._id }),
     admirersCount(viewer),
     listMatches(viewer),
   ]);
@@ -384,8 +368,11 @@ export async function summary(viewer: UserDoc) {
 export async function crushStatus(viewer: UserDoc, userId: string) {
   if (!isValidObjectId(userId)) return { state: 'none' as const, match_id: null, conversation_id: null };
   const row = await Crush.findOne({ from_user_id: viewer._id, to_user_id: userId }).lean<CrushAttrs>();
-  if (!row || row.status === 'removed') {
+  if (!row) {
     return { state: 'none' as const, match_id: null, conversation_id: null };
+  }
+  if (row.status === 'removed') {
+    return { state: 'removed' as const, match_id: null, conversation_id: null };
   }
   if (row.status === 'matched' && row.match_id) {
     const m = await CrushMatch.findById(row.match_id).lean<CrushMatchAttrs>();
@@ -433,14 +420,6 @@ export async function addCrush(viewer: UserDoc, userId: string) {
     to_user_id: target._id,
   }).lean<CrushAttrs>();
   if (existing && existing.status !== 'removed') throw alreadyCrush();
-  if (existing?.removed_at && existing.removed_at.getTime() > now.getTime() - COOLDOWN_MS) {
-    const retryAt = new Date(existing.removed_at.getTime() + COOLDOWN_MS);
-    throw ApiError.tooMany(
-      'You removed them recently. You can add them again tomorrow.',
-      { retry_at: retryAt.toISOString() },
-      'CRUSH_COOLDOWN',
-    );
-  }
 
   const addedToday = await Crush.countDocuments({
     from_user_id: viewer._id,
@@ -459,9 +438,11 @@ export async function addCrush(viewer: UserDoc, userId: string) {
       limit,
       scope: 'crush_spots',
     });
-  const used = () =>
-    Crush.countDocuments({ from_user_id: viewer._id, status: { $in: ['active', 'paused'] } });
-  if ((await used()) >= limit) throw spotsFull();
+  // A spot is spent on the first add. Removing or matching does not give it back.
+  // Putting a removed person back uses the spot they already hold.
+  const used = () => Crush.countDocuments({ from_user_id: viewer._id });
+  const readd = existing?.status === 'removed';
+  if (!readd && (await used()) >= limit) throw spotsFull();
 
   let row: CrushAttrs;
   if (existing) {
@@ -486,8 +467,9 @@ export async function addCrush(viewer: UserDoc, userId: string) {
     }
   }
 
-  // Two adds at once could both pass the spot check; the later one gives its spot back.
-  if ((await used()) > limit) {
+  // Two new adds at once could both pass the spot check; the later one is dropped.
+  // A re-add does not take a second spot.
+  if (!readd && (await used()) > limit) {
     if (existing) {
       await Crush.updateOne(
         { _id: row._id },
@@ -519,16 +501,14 @@ export async function addCrush(viewer: UserDoc, userId: string) {
     },
     { $set: { notified_at: now } },
   );
-  const delay = noticeDelayMs();
   if (notice) {
     await notifySystem({
       recipientId: target._id,
       type: 'crush_added',
       text: ADDED_NOTICE,
-      deliverAt: new Date(now.getTime() + delay),
     });
   }
-  emitSummary(target._id, 'crush.added', {}, delay);
+  emitSummary(target._id, 'crush.added', {});
   emitToUser(viewer.id as string, 'crush.summary', {});
 
   const hints = await hintsFor(viewer, [target._id]);

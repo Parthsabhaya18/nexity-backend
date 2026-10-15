@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { env } from '../src/config/env';
 import { clearGifCache } from '../src/modules/gifs/gifs.service';
-import { api, app, person, socketFor, connected, useChatHarness } from './chatHarness';
+import { acceptedFollow, api, app, person, socketFor, connected, useChatHarness } from './chatHarness';
 
 useChatHarness();
 
@@ -90,6 +90,7 @@ describe('GIF proxy', () => {
     fetchMock.mockResolvedValueOnce(giphyResponse(['z9']));
     const riya = await person('riya.writes');
     const arjun = await person('arjun.k');
+    await acceptedFollow(riya, arjun);
     const gif = (await api(riya).get('/gifs/search?q=hi')).body.data[0];
     const convo = (await api(riya).post('/conversations', { participant_ids: [arjun.id] })).body.id;
     const sent = await api(riya).post(`/conversations/${convo}/messages`, {

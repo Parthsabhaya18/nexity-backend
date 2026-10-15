@@ -122,7 +122,7 @@ describe('secret crush', () => {
     expect((await api(alice).get(`/secret-crushes/status/${bob.id}`)).body.state).toBe('active');
   });
 
-  it('rejects self, duplicates and re-adds within 24 h, and never notifies twice', async () => {
+  it('rejects self and duplicates, allows an immediate re-add, and never notifies twice', async () => {
     const alice = await signUp('alice');
     const bob = await signUp('bob');
     await plan(alice, 'plus');
@@ -136,14 +136,6 @@ describe('secret crush', () => {
     expect(dup.body.error.code).toBe('ALREADY_CRUSH');
 
     expect((await api(alice).del(`/secret-crushes/${bob.id}`)).status).toBe(204);
-    const cooldown = await add(alice, bob);
-    expect(cooldown.status).toBe(429);
-    expect(cooldown.body.error.code).toBe('CRUSH_COOLDOWN');
-
-    await Crush.updateOne(
-      { status: 'removed' },
-      { $set: { removed_at: new Date(Date.now() - 25 * 3_600_000) } },
-    );
     expect((await add(alice, bob)).status).toBe(201);
     const notices = await Notification.countDocuments({ type: 'crush_added' });
     expect(notices).toBe(1);
@@ -161,6 +153,16 @@ describe('secret crush', () => {
 
     const summary = await api(alice).get('/secret-crushes/summary');
     expect(summary.body.spots).toEqual({ limit: 3, used: 3, left: 0 });
+
+    expect((await api(alice).del(`/secret-crushes/${others[0]!.id}`)).status).toBe(204);
+    const afterRemove = await api(alice).get('/secret-crushes/summary');
+    expect(afterRemove.body.spots).toEqual({ limit: 3, used: 3, left: 0 });
+    const listed = await api(alice).get('/secret-crushes');
+    const removed = listed.body.data.find(
+      (c: { user: { id: string }; status: string }) => c.user.id === others[0]!.id,
+    );
+    expect(removed.status).toBe('removed');
+    expect((await add(alice, others[3]!)).body.error.code).toBe('PLAN_LIMIT_REACHED');
   });
 
   it('matches mutual crushes once, opens a love chat and celebrates once', async () => {
@@ -193,8 +195,12 @@ describe('secret crush', () => {
       const summary = await api(a).get('/secret-crushes/summary');
       expect(summary.body.matches_count).toBe(1);
       expect(summary.body.pending_celebration_match_id).toBe(matchId);
-      // The matched crush frees the spot and leaves the list.
-      expect(summary.body.spots.used).toBe(0);
+      // Matching does not free the spot. The person leaves this list for Matches.
+      expect(summary.body.spots).toEqual({
+        limit: a.id === alice.id ? 3 : 10,
+        used: 1,
+        left: a.id === alice.id ? 2 : 9,
+      });
       expect((await api(a).get('/secret-crushes')).body.data).toHaveLength(0);
     }
 

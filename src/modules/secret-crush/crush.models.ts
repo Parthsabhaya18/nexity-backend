@@ -3,7 +3,7 @@ import mongoose, { type InferSchemaType, type Types } from 'mongoose';
 export const CRUSH_STATUSES = ['active', 'paused', 'matched', 'removed'] as const;
 export type CrushStatus = (typeof CRUSH_STATUSES)[number];
 
-/** One row per (adder, person). Removing keeps the row for the 24 h re-add cooldown. */
+/** One row per (adder, person). Removing keeps the row so the spot stays used. */
 const crushSchema = new mongoose.Schema(
   {
     from_user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },

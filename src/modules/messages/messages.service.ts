@@ -442,7 +442,12 @@ const previewOf = (m: Pick<MessageAttrs, 'body' | 'deleted_at'>) =>
   m.deleted_at ? '' : m.body.slice(0, PREVIEW_LENGTH);
 
 /** Conversation as seen by one participant (unread count, read state and "peer" differ per viewer). */
-function toConversationDto(convo: ConversationAttrs, viewerId: string, users: UserMap) {
+function toConversationDto(
+  convo: ConversationAttrs,
+  viewerId: string,
+  users: UserMap,
+  canSend: boolean,
+) {
   const me = memberOf(convo, viewerId);
   const other = convo.members.find((m) => m.user_id.toString() !== viewerId);
   const last = convo.last_message;
@@ -470,6 +475,7 @@ function toConversationDto(convo: ConversationAttrs, viewerId: string, users: Us
     is_muted: Boolean(me?.muted_until && me.muted_until > new Date()),
     origin: convo.origin ?? null,
     theme: convo.theme ?? null,
+    can_send: canSend,
     created_at: timestamps.created_at.toISOString(),
     updated_at: timestamps.updated_at.toISOString(),
   };
@@ -486,8 +492,28 @@ async function requireMembership(conversationId: string, userId: string) {
   return convo;
 }
 
+async function acceptedFollowingIds(viewerId: string, peerIds: Types.ObjectId[]) {
+  const ids = [...new Set(peerIds.map((id) => id.toString()))].map((id) => oid(id));
+  if (!ids.length) return new Set<string>();
+  const rows = await Follow.find({
+    follower_id: oid(viewerId),
+    following_id: { $in: ids },
+    status: 'accepted',
+  })
+    .select('following_id')
+    .lean();
+  return new Set(rows.map((row) => row.following_id.toString()));
+}
+
 async function conversationFor(convo: ConversationAttrs, viewerId: string) {
-  return toConversationDto(convo, viewerId, await loadUsers(convo.participant_ids));
+  const peer = convo.participant_ids.find((id) => id.toString() !== viewerId);
+  const following = await acceptedFollowingIds(viewerId, peer ? [peer] : []);
+  return toConversationDto(
+    convo,
+    viewerId,
+    await loadUsers(convo.participant_ids),
+    Boolean(peer && following.has(peer.toString())),
+  );
 }
 
 /** Sends each participant their own view of the conversation so inbox rows update live. */
@@ -497,7 +523,13 @@ async function broadcastConversation(conversationId: Types.ObjectId) {
   const users = await loadUsers(convo.participant_ids);
   for (const id of convo.participant_ids) {
     const userId = id.toString();
-    emitToUser(userId, 'conversation.updated', toConversationDto(convo, userId, users));
+    const peer = convo.participant_ids.find((other) => other.toString() !== userId);
+    const following = await acceptedFollowingIds(userId, peer ? [peer] : []);
+    emitToUser(
+      userId,
+      'conversation.updated',
+      toConversationDto(convo, userId, users, Boolean(peer && following.has(peer.toString()))),
+    );
   }
 }
 
@@ -559,10 +591,18 @@ export async function listConversations(userId: string, { cursor, limit }: Page)
       }),
   );
   const users = await loadUsers([...new Set(page.flatMap((c) => c.participant_ids))]);
+  const peers = page.flatMap((c) => {
+    const other = c.participant_ids.find((id) => id.toString() !== userId);
+    return other ? [other] : [];
+  });
+  const following = await acceptedFollowingIds(userId, peers);
   const last = page[page.length - 1];
 
   return {
-    data: page.map((c) => toConversationDto(c, userId, users)),
+    data: page.map((c) => {
+      const other = c.participant_ids.find((id) => id.toString() !== userId);
+      return toConversationDto(c, userId, users, Boolean(other && following.has(other.toString())));
+    }),
     pagination: {
       next_cursor: hasMore && last?.last_message_at ? encodeCursor(last.last_message_at, last._id) : null,
       has_more: hasMore,
@@ -584,11 +624,11 @@ export async function openDirectConversation(userId: string, participantId: stri
   if (await isBlockedEither(oid(userId), oid(participantId))) {
     throw ApiError.forbidden('You cannot message this account.', 'USER_BLOCKED');
   }
+  await assertPeerAcceptsMessages(userId, oid(participantId));
 
   const directKey = directKeyOf(userId, participantId);
   const existing = await Conversation.findOne({ direct_key: directKey }).lean<ConversationAttrs>();
   if (existing) return { conversation: await conversationFor(existing, userId), created: false };
-  await assertPeerAcceptsMessages(userId, oid(participantId));
 
   try {
     const now = new Date();
@@ -846,26 +886,17 @@ export async function listMessages(
   };
 }
 
-/**
- * "Who can message you: People you follow". Once the recipient has written in the chat
- * themselves, the conversation stays open both ways.
- */
-async function assertPeerAcceptsMessages(
-  senderId: string,
-  peerId: Types.ObjectId,
-  conversationId?: Types.ObjectId,
-) {
-  const peer = await User.findById(peerId).select('username message_privacy').lean();
-  if (!peer || peer.message_privacy !== 'following') return;
-  const [follows, replied] = await Promise.all([
-    Follow.exists({ follower_id: peerId, following_id: oid(senderId), status: 'accepted' }),
-    conversationId
-      ? Message.exists({ conversation_id: conversationId, sender_id: peerId })
-      : false,
-  ]);
-  if (follows || replied) return;
+/** The sender must follow the recipient. A pending request, a public profile, or an old chat does not unlock it. */
+async function assertPeerAcceptsMessages(senderId: string, peerId: Types.ObjectId) {
+  const follows = await Follow.exists({
+    follower_id: oid(senderId),
+    following_id: peerId,
+    status: 'accepted',
+  });
+  if (follows) return;
+  const peer = await User.findById(peerId).select('username').lean();
   throw ApiError.forbidden(
-    `@${peer.username} only gets messages from people they follow.`,
+    peer ? `Follow @${peer.username} to message them.` : 'Follow this account to message them.',
     'MESSAGES_RESTRICTED',
   );
 }
@@ -905,7 +936,7 @@ export async function sendMessage(
   if (peerId && (await isBlockedEither(oid(userId), peerId))) {
     throw ApiError.forbidden('You cannot message this account.', 'USER_BLOCKED');
   }
-  if (peerId) await assertPeerAcceptsMessages(userId, peerId, convo._id);
+  if (peerId) await assertPeerAcceptsMessages(userId, peerId);
 
   if (input.reply_to_id) {
     const target = await Message.exists({

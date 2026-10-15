@@ -71,7 +71,6 @@ export async function updateMe(user: UserDoc, input: UpdateMeInput) {
   if (input.show_activity_status !== undefined) {
     user.show_activity_status = input.show_activity_status;
   }
-  if (input.message_privacy !== undefined) user.message_privacy = input.message_privacy;
   const replaced =
     input.avatar_media_id !== undefined ? await applyAvatar(user, input.avatar_media_id) : null;
 
