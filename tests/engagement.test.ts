@@ -569,6 +569,7 @@ describe('sharing posts and reels', () => {
     await signUp('stranger');
     await api(alice).post(`/users/${bob.id}/follow`);
     await api(cara).post(`/users/${alice.id}/follow`);
+    await api(alice).post(`/users/${dan.id}/follow`);
     const { body } = await api(alice).post('/conversations', { participant_ids: [dan.id] });
     await api(alice).post(`/conversations/${body.id as string}/messages`, {
       body: 'hi',
@@ -584,6 +585,8 @@ describe('sharing posts and reels', () => {
 
   it("sends a post card and the note to each person's chat", async () => {
     const post = await newPost(bob);
+    await api(alice).post(`/users/${bob.id}/follow`);
+    await api(alice).post(`/users/${cara.id}/follow`);
     const sent = await api(alice).post('/shares', {
       kind: 'post',
       id: post.id,
@@ -641,6 +644,7 @@ describe('sharing posts and reels', () => {
     const story = await api(alice).post('/stories/share', { kind: 'post', id: post.id, media_index: 1 });
     expect(story.status).toBe(201);
     expect((await Story.findById(story.body.id))!.key).toBe(second.key);
+    await api(alice).post(`/users/${bob.id}/follow`);
     const sent = await api(alice).post('/shares', { kind: 'post', id: post.id, user_ids: [bob.id], media_index: 1 });
     expect(sent.status).toBe(201);
     const thread = await api(bob).get(`/conversations/${sent.body.conversation_ids[0] as string}/messages`);
@@ -650,6 +654,7 @@ describe('sharing posts and reels', () => {
 
   it('sends a profile as a card with the latest posts', async () => {
     await newPost(bob);
+    await api(alice).post(`/users/${cara.id}/follow`);
     const sent = await api(alice).post('/shares', { kind: 'profile', id: bob.id, user_ids: [cara.id], body: 'follow' });
     expect(sent.status).toBe(201);
     const thread = await api(cara).get(`/conversations/${sent.body.conversation_ids[0] as string}/messages`);

@@ -74,7 +74,7 @@ describe('privacy and notification settings', () => {
   it('returns defaults and saves changes', async () => {
     const { auth } = await signUp('settings_a');
     const me = await request(app).get('/api/v1/users/me').set('Authorization', auth);
-    expect(me.body.privacy).toEqual({ show_activity_status: true, message_privacy: 'everyone' });
+    expect(me.body.privacy).toEqual({ show_activity_status: true });
     expect(me.body.notification_settings).toEqual({
       paused: false,
       comments: true,
@@ -84,11 +84,10 @@ describe('privacy and notification settings', () => {
     const updated = await request(app)
       .patch('/api/v1/users/me')
       .set('Authorization', auth)
-      .send({ show_activity_status: false, message_privacy: 'following' });
+      .send({ show_activity_status: false });
     expect(updated.status).toBe(200);
     expect(updated.body.privacy).toEqual({
       show_activity_status: false,
-      message_privacy: 'following',
     });
 
     const notif = await request(app)
@@ -98,32 +97,85 @@ describe('privacy and notification settings', () => {
     expect(notif.body).toEqual({ paused: false, comments: false, story_likes: true });
   });
 
-  it('blocks messages from people the recipient does not follow', async () => {
+  it('lets only an accepted follower send, in either direction', async () => {
     const a = await signUp('sender_a');
     const b = await signUp('receiver_b');
+    const open = (from: { auth: string }, toId: string) =>
+      request(app)
+        .post('/api/v1/conversations')
+        .set('Authorization', from.auth)
+        .send({ type: 'direct', participant_ids: [toId] });
+    const say = (from: { auth: string }, id: string, body: string) =>
+      request(app)
+        .post(`/api/v1/conversations/${id}/messages`)
+        .set('Authorization', from.auth)
+        .send({ body, client_message_id: crypto.randomUUID() });
+
+    const locked = await open(a, b.id);
+    expect(locked.status).toBe(403);
+    expect(locked.body.error.code).toBe('MESSAGES_RESTRICTED');
+
+    await request(app).post(`/api/v1/users/${b.id}/follow`).set('Authorization', a.auth);
+    const convo = await open(a, b.id);
+    expect(convo.status).toBe(201);
+    expect(convo.body.can_send).toBe(true);
+    expect((await say(a, convo.body.id as string, 'hi')).status).toBe(201);
+
+    const reply = await say(b, convo.body.id as string, 'reply');
+    expect(reply.status).toBe(403);
+    expect(reply.body.error.code).toBe('MESSAGES_RESTRICTED');
+    const readable = await request(app)
+      .get(`/api/v1/conversations/${convo.body.id as string}`)
+      .set('Authorization', b.auth);
+    expect(readable.status).toBe(200);
+    expect(readable.body.can_send).toBe(false);
+
+    await request(app).post(`/api/v1/users/${a.id}/follow`).set('Authorization', b.auth);
+    expect((await say(b, convo.body.id as string, 'now')).status).toBe(201);
+    expect((await open(b, a.id)).status).toBe(200);
+  });
+
+  it('keeps a pending follow from unlocking messages until it is accepted', async () => {
+    const a = await signUp('pend_a');
+    const b = await signUp('pend_b');
     await request(app)
       .patch('/api/v1/users/me')
       .set('Authorization', b.auth)
-      .send({ message_privacy: 'following' });
+      .send({ is_private: true });
+    const requested = await request(app)
+      .post(`/api/v1/users/${b.id}/follow`)
+      .set('Authorization', a.auth);
+    expect(requested.body.status).toBe('pending');
 
-    const open = () =>
-      request(app)
-        .post('/api/v1/conversations')
-        .set('Authorization', a.auth)
-        .send({ type: 'direct', participant_ids: [b.id] });
-
-    const refused = await open();
+    const refused = await request(app)
+      .post('/api/v1/conversations')
+      .set('Authorization', a.auth)
+      .send({ type: 'direct', participant_ids: [b.id] });
     expect(refused.status).toBe(403);
     expect(refused.body.error.code).toBe('MESSAGES_RESTRICTED');
 
-    await request(app).post(`/api/v1/users/${a.id}/follow`).set('Authorization', b.auth);
-    const convo = await open();
-    expect(convo.status).toBe(201);
-    const sent = await request(app)
-      .post(`/api/v1/conversations/${convo.body.id as string}/messages`)
+    const inbox = await request(app)
+      .get('/api/v1/users/me/follow-requests')
+      .set('Authorization', b.auth);
+    const requestId = inbox.body.items[0].id as string;
+    expect(
+      (
+        await request(app)
+          .post(`/api/v1/follow-requests/${requestId}/accept`)
+          .set('Authorization', b.auth)
+      ).status,
+    ).toBe(200);
+
+    const opened = await request(app)
+      .post('/api/v1/conversations')
       .set('Authorization', a.auth)
-      .send({ body: 'hi', client_message_id: crypto.randomUUID() });
-    expect(sent.status).toBe(201);
+      .send({ type: 'direct', participant_ids: [b.id] });
+    expect(opened.status).toBe(201);
+    const back = await request(app)
+      .post(`/api/v1/conversations/${opened.body.id as string}/messages`)
+      .set('Authorization', b.auth)
+      .send({ body: 'no', client_message_id: crypto.randomUUID() });
+    expect(back.status).toBe(403);
   });
 });
 

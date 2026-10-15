@@ -13,7 +13,6 @@ export const GENDERS = ['woman', 'man', 'other', 'non_binary', 'prefer_not_to_sa
 export const BIO_MAX = 150;
 export const WEBSITE_MAX = 200;
 
-export const MESSAGE_PRIVACY = ['everyone', 'following'] as const;
 export const NOTIFICATION_SETTING_KEYS = ['paused', 'comments', 'story_likes'] as const;
 export type NotificationSettingKey = (typeof NOTIFICATION_SETTING_KEYS)[number];
 
@@ -44,8 +43,6 @@ const userSchema = new mongoose.Schema(
     status: { type: String, enum: ['active', 'disabled', 'deleted'], default: 'active' },
     /** Off hides "Active now" / "Active 5m ago" from everyone. */
     show_activity_status: { type: Boolean, default: true },
-    /** `following`: only people this user follows can start or continue a chat. */
-    message_privacy: { type: String, enum: MESSAGE_PRIVACY, default: 'everyone' },
     notification_settings: {
       paused: { type: Boolean, default: false },
       comments: { type: Boolean, default: true },
@@ -222,7 +219,6 @@ export async function toMeDto(user: UserDoc) {
     preferences: { theme: user.theme_preference, mood: user.mood ?? null },
     privacy: {
       show_activity_status: sharesActivity(user),
-      message_privacy: user.message_privacy ?? 'everyone',
     },
     notification_settings: notificationSettingsOf(user),
     password_changed_at: user.password_changed_at.toISOString(),

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { Conversation } from '../src/modules/messages/conversation.model';
 import { Block } from '../src/modules/safety/block.model';
-import { api, app, openChat, person, send, useChatHarness } from './chatHarness';
+import { acceptedFollow, api, app, openChat, person, send, useChatHarness } from './chatHarness';
 
 useChatHarness();
 
@@ -62,6 +62,7 @@ describe('opening a direct conversation', () => {
   it('creates only one conversation when both people open it at the same time', async () => {
     const riya = await person('riya.writes');
     const arjun = await person('arjun.k');
+    await Promise.all([acceptedFollow(riya, arjun), acceptedFollow(arjun, riya)]);
     const results = await Promise.all([
       api(riya).post('/conversations', { participant_ids: [arjun.id] }),
       api(arjun).post('/conversations', { participant_ids: [riya.id] }),

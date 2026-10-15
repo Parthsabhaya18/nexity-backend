@@ -10,6 +10,7 @@ import { startNearbyCleanup, stopNearbyCleanup } from './modules/nearby/nearby.c
 import { startPaymentsJob, stopPaymentsJob } from './modules/payments/payments.jobs';
 import { startStoryCleanup, stopStoryCleanup } from './modules/stories/story.cleanup';
 import { refreshPlans } from './modules/subscriptions/plans';
+import { User } from './modules/users/user.model';
 import { attachRealtime, closeRealtime } from './realtime/io';
 import { startKeepAlive, stopKeepAlive } from './utils/keepAlive';
 import { logger } from './utils/logger';
@@ -19,6 +20,9 @@ let shuttingDown = false;
 
 async function start() {
   await connectDatabase();
+  await User.collection
+    .updateMany({ message_privacy: { $exists: true } }, { $unset: { message_privacy: '' } })
+    .catch((err: unknown) => logger.warn({ err }, 'Could not remove message_privacy'));
   await connectRedis();
   await refreshPlans(true);
 

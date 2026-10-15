@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { passwordSchema, usernameSchema } from '../auth/auth.schema';
-import { BIO_MAX, MESSAGE_PRIVACY, WEBSITE_MAX } from './user.model';
+import { BIO_MAX, WEBSITE_MAX } from './user.model';
 
 const websiteSchema = z
   .string()
@@ -36,7 +36,6 @@ export const updateMeSchema = z.object({
     .optional(),
   is_private: z.boolean().optional(),
   show_activity_status: z.boolean().optional(),
-  message_privacy: z.enum(MESSAGE_PRIVACY).optional(),
 });
 
 export type UpdateMeInput = z.infer<typeof updateMeSchema>;
